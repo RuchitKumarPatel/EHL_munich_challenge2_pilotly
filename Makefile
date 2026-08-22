@@ -15,7 +15,8 @@ RESULTS := results
 .DEFAULT_GOAL := all
 
 .PHONY: all recon labels jobkey features costs model policy gates strata ope \
-        family figs report console console-check console-e2e test demo clean help dirs
+        family figs report console console-check console-e2e test demo clean help dirs \
+        tooling
 
 ## all: run the full pipeline in dependency order
 #
@@ -26,7 +27,7 @@ RESULTS := results
 #   * `strata` and `family` each merge one section into results/estimates.json
 #     and `report` refuses to run without the "family_contrast" section, so both
 #     are part of `all`, not optional extras.
-all: dirs recon labels jobkey features costs model policy gates strata ope \
+all: dirs recon labels jobkey features costs tooling model policy gates strata ope \
      family figs report
 	@echo ""
 	@echo "pipeline complete -> $(RESULTS)/"
@@ -55,6 +56,14 @@ features: dirs
 ## costs: cache-aware price model and effective multipliers
 costs: dirs
 	$(PY) -m router.costs
+
+## tooling: tool-block interventions (omit/truncate/defer) -> results/tooling.json
+#
+# Reads the export directly for per-tool definitions (recon only carries the
+# block TOTAL), plus recon.jsonl for the prefix split and jobkey.jsonl for the
+# leak-free job-history policy. Runs after both.
+tooling: dirs
+	$(PY) -m router.tooling
 
 # ---------------------------------------------------------------- stage 3: policy
 ## model: friction predictor fit on pre-treatment features only
