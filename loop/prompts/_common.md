@@ -47,20 +47,27 @@ exists because four dead ends were each re-derived more than once.
 
 1. **Never commit or move `export/`.** Proprietary, challenge use only. It is gitignored; keep
    it that way. `results/` is generated and gitignored too.
-2. **Never write to `scripts/`, `export/`, or `site/`.** A hook blocks it. Your code goes in
+2. **Never quote export content in a tracked file** — not in a doc, not in a commit message, not
+   in a backlog note. This is stricter than it sounds and it has already gone wrong twice: a
+   postmortem quoted three raw identifiers verbatim, and a backlog note quoted the placeholder
+   tokens *from that finding*. Both were pushed to a shared repository before anyone looked.
+   `tests/test_data_safety.py` catches the placeholder shapes; nothing catches raw ids. Before
+   you write any concrete-looking token into a file, `grep -c` it against `export/` — counts
+   only, never print the content. A nonzero count means it comes out.
+3. **Never write to `scripts/`, `export/`, or `site/`.** A hook blocks it. Your code goes in
    `router/`, your tests in `tests/`, your notes in `docs/`.
-3. **Never run `git add -A`, `git add .`, `git commit -a`.** A hook blocks them with exit 2 and
+4. **Never run `git add -A`, `git add .`, `git commit -a`.** A hook blocks them with exit 2 and
    the turn loses time. Stage explicit paths only: `git add router/foo.py tests/test_foo.py`.
-4. **Never put the string `results` followed by a slash into a git command line**, including
+5. **Never put the string `results` followed by a slash into a git command line**, including
    commit messages — the same hook pattern-matches the whole command and will block it. Write
    "the generated artifacts" instead.
-5. **sklearn and scipy are banned and not installed.** stdlib + numpy + matplotlib on
+6. **sklearn and scipy are banned and not installed.** stdlib + numpy + matplotlib on
    `.venv/bin/python`. Write the estimator by hand.
-6. **`group_trajectories()` is banned.** n is 1000, not 953. Use `iter_requests()` and
+7. **`group_trajectories()` is banned.** n is 1000, not 953. Use `iter_requests()` and
    `first_user_text()`.
-7. Every number that appears in any user-facing artifact must exist in `results/claims.json`
+8. Every number that appears in any user-facing artifact must exist in `results/claims.json`
    under a stable key. If it is not there, it is not ours.
-8. Tokens are **estimates**, dollars are **assumptions**, friction is **not quality**. Every
+9. Tokens are **estimates**, dollars are **assumptions**, friction is **not quality**. Every
    sentence you write about them must say so.
 
 ### Useful commands

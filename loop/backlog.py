@@ -79,19 +79,29 @@ def _by_status(items: list[dict], status: str) -> list[dict]:
 
 
 # ----------------------------------------------------------------- turn planner
-def plan_turn(items: list[dict], turn: int, deck_every: int) -> str:
+def plan_turn(items: list[dict], turn: int, deck_every: int, review_every: int = 0) -> str:
     """Which turn type runs next. Pure function of the queue -- no model discretion.
 
     Order is load-bearing:
       * the deck check comes first so the slide set is never more than
         `deck_every` turns stale, whatever the queue is doing;
+      * `review` comes next for the same reason -- a quality and security pass
+        that only runs when the queue happens to be empty is a pass that never
+        runs on the night the loop is busiest, which is exactly the night it
+        matters. It reads its own scope from `last_review_sha`, so a review turn
+        with nothing new to look at costs almost nothing;
       * `merge` outranks `implement` so main keeps moving and the next idea
         branches off a current main (which keeps every merge a fast-forward);
       * `council` fires only when the queue is dry, because it is by far the
         most expensive turn type.
+
+    A turn that satisfies both cadences goes to `deck`; review picks it up on its
+    next multiple rather than both being crammed into one turn.
     """
     if turn > 0 and turn % deck_every == 0:
         return "deck"
+    if turn > 0 and review_every > 0 and turn % review_every == 0:
+        return "review"
     if _by_status(items, "implemented"):
         return "merge"
     if _by_status(items, "accepted"):
@@ -144,7 +154,19 @@ def render_ideas(items: list[dict], state: dict) -> str:
 
 # -------------------------------------------------------------------- subcommands
 def cmd_plan(args) -> int:
-    print(plan_turn(load_backlog(), load_state().get("turn", 0), args.deck_every))
+    print(plan_turn(load_backlog(), load_state().get("turn", 0),
+                    args.deck_every, args.review_every))
+    return 0
+
+
+def cmd_mark_review(args) -> int:
+    """Record how far the last quality/security pass got, so the next one can
+    scope itself to what landed since instead of re-reading the whole tree."""
+    state = load_state()
+    state["last_review_sha"] = args.sha
+    state["last_review_turn"] = state.get("turn", 0)
+    save_state(state)
+    print(args.sha)
     return 0
 
 
@@ -247,7 +269,13 @@ def main() -> int:
 
     sp = sub.add_parser("plan", help="print the turn type that should run next")
     sp.add_argument("--deck-every", type=int, default=5)
+    sp.add_argument("--review-every", type=int, default=0,
+                    help="0 disables the periodic quality/security review turn")
     sp.set_defaults(func=cmd_plan)
+
+    sp = sub.add_parser("mark-review", help="record the sha the last review covered")
+    sp.add_argument("--sha", required=True)
+    sp.set_defaults(func=cmd_mark_review)
 
     sp = sub.add_parser("add", help="add a proposed idea")
     sp.add_argument("--title", required=True)
