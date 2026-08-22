@@ -104,6 +104,10 @@
       {
         "turn": 4,
         "text": "DATA-SAFETY, needs a human. CONTAINED, NOT FIXED: turn 4 renamed .git/hooks/pre-push to .git/hooks/pre-push.disabled-by-review-turn4 (local, reversible, see .git/hooks/README-pre-push-disabled.txt) so no further checkpoints leave the laptop. Branch pushes are unaffected and still gated. What remains needs a human: the 34 refs already on origin are NOT reachable from any branch, so rewriting main will not remove them -- they need explicit 'git push origin :refs/entire/checkpoints/<id>' deletion, and that is an irreversible outward-facing action on a shared remote. Decide alongside i0006, same conversation. Do NOT restore the hook until then."
+      },
+      {
+        "turn": 5,
+        "text": "TURN 5 (deck): turn 4's containment FAILED and has been replaced. The entire CLI reinstalls .git/hooks/pre-push automatically at session start -- the file turn 4 renamed at 01:43 was back at 01:47 -- and this turn's first `git push` printed '[entire] Pushing 4 checkpoint ref(s) to origin'. Remote refs under refs/entire went 34 -> 36. Durable containment now: `entire configure --local --skip-push-sessions`, writing {\"strategy_options\":{\"push_sessions\":false}} to .entire/settings.local.json (untracked, already in .entire/.gitignore). Verified by a second push: no '[entire] Pushing' line, remote ref count unchanged at 36. Still BLOCKED and still needs a human for the same reason as before -- the 36 refs on origin are unreachable from any branch, so no history rewrite removes them; they need explicit 'git push origin :refs/entire/checkpoints/<id>' deletions, which is irreversible on a shared remote. Decide with i0006. Do not re-enable push_sessions."
       }
     ]
   },
