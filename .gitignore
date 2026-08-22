@@ -1,0 +1,7 @@
+export/
+results/
+submission/
+*.zip
+__pycache__/
+*.tar.gz
+.venv/
