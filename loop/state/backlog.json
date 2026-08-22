@@ -76,5 +76,20 @@
         "text": "DATA-SAFETY. Not a judgement call, skips evaluate."
       }
     ]
+  },
+  {
+    "id": "i0006",
+    "title": "Purge export content from pushed git history",
+    "kind": "infra",
+    "why": "Data safety. See docs/DATA-SAFETY-DEBT.md for the exact commits, files and counts. Needs a history rewrite plus force-push on two shared branches, with teammates holding branches on origin. Deferred by the operator to daytime 2026-08-23.",
+    "status": "blocked",
+    "branch": null,
+    "created_turn": 4,
+    "notes": [
+      {
+        "turn": 4,
+        "text": "HUMAN DECISION, deferred on purpose. The loop must not attempt this: rewriting shared history unattended is exactly the class of action that damages a team repo. Leave it alone."
+      }
+    ]
   }
 ]
