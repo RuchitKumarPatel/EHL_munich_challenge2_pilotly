@@ -91,5 +91,145 @@
         "text": "HUMAN DECISION, deferred on purpose. The loop must not attempt this: rewriting shared history unattended is exactly the class of action that damages a team repo. Leave it alone."
       }
     ]
+  },
+  {
+    "id": "i0007",
+    "title": "entire checkpoint refs push session transcripts past every data-safety gate",
+    "kind": "infra",
+    "why": "loop/run.sh:159 skips entire/* on the stated assumption that 'the CLI pushes them itself' -- and .git/hooks/pre-push did exactly that on EVERY git push. Measured: 34 refs under refs/entire/checkpoints, all 34 already on origin, and their blobs carry 67 distinct concrete redaction serials from the licensed export. Invisible to all three gates: .gitignore does not apply to refs, tests/test_data_safety.py::_repo_files() enumerates git ls-files and never sees them, and push_all_branches exempts them by name. Found by the turn-4 security review and verified independently with git ls-remote and git cat-file.",
+    "status": "blocked",
+    "branch": null,
+    "created_turn": 4,
+    "notes": [
+      {
+        "turn": 4,
+        "text": "DATA-SAFETY, needs a human. CONTAINED, NOT FIXED: turn 4 renamed .git/hooks/pre-push to .git/hooks/pre-push.disabled-by-review-turn4 (local, reversible, see .git/hooks/README-pre-push-disabled.txt) so no further checkpoints leave the laptop. Branch pushes are unaffected and still gated. What remains needs a human: the 34 refs already on origin are NOT reachable from any branch, so rewriting main will not remove them -- they need explicit 'git push origin :refs/entire/checkpoints/<id>' deletion, and that is an irreversible outward-facing action on a shared remote. Decide alongside i0006, same conversation. Do NOT restore the hook until then."
+      }
+    ]
+  },
+  {
+    "id": "i0008",
+    "title": "Supervisor budget check interpolates state.json into a python -c source string",
+    "kind": "code",
+    "why": "loop/run.sh:193 builds \"import sys;sys.exit(0 if float('$spent') >= ...)\" where $spent is the raw printed cost_usd field out of loop/state/state.json. That file is written by every turn's bypassPermissions agent, so a non-numeric value becomes executable Python in the supervisor -- which runs outside any tool-permission boundary and re-evaluates it via stop_reason() at the top of every loop iteration. Found by the turn-4 security review.",
+    "status": "accepted",
+    "branch": null,
+    "created_turn": 4,
+    "notes": [
+      {
+        "turn": 4,
+        "text": "SECURITY. Fix: pass values as argv, not source text -- \"$PY\" -c 'import sys;sys.exit(0 if float(sys.argv[1]) >= float(sys.argv[2]) else 1)' \"$spent\" \"$LOOP_BUDGET_USD\". Harden state_field, usage_pct, is_rate_limited and the COST extractor the same way as defence in depth. Success = a test that writes a payload string into state.json's cost_usd, runs stop_reason, and asserts the payload did not execute and the loop stopped cleanly."
+      }
+    ]
+  },
+  {
+    "id": "i0009",
+    "title": "The push gate scans the checked-out tree but pushes every branch",
+    "kind": "code",
+    "why": "loop/run.sh:154 runs tests.test_data_safety against whatever HEAD is, then loop/run.sh:161-183 pushes every ref under refs/heads. A branch updated by an earlier turn and not currently checked out is pushed having never been scanned -- e.g. text-classifier-finetune, which per docs/DATA-SAFETY-DEBT.md still carries three raw identifiers, is pushed unscanned whenever main is the checkout. This is the exact incident the gate was written to prevent. Found independently by the code-review skill and the turn-4 security review.",
+    "status": "accepted",
+    "branch": null,
+    "created_turn": 4,
+    "notes": [
+      {
+        "turn": 4,
+        "text": "DATA-SAFETY. Fix: scan each branch's own tree before pushing it -- loop over the ref list, and for each candidate run the data-safety suite against that ref (git worktree add a throwaway checkout, or drive the test's file enumeration off 'git ls-tree -r <ref>' instead of 'git ls-files'). Skip and log any branch that fails; do not suppress the whole push cycle for one bad branch. Success = a test that dirties a non-checked-out branch with a concrete placeholder and asserts push_all_branches refuses that branch and still pushes the clean ones."
+      }
+    ]
+  },
+  {
+    "id": "i0010",
+    "title": "bootstrap.sh pushes every branch with no data-safety gate at all",
+    "kind": "code",
+    "why": "loop/bootstrap.sh:100 pushes every branch and the file contains no call to data_safety_ok or tests.test_data_safety -- grep confirms line 100 is the only match for either. Commit 8257642 added the gate to run.sh's push path and did not backport it. Re-running bootstrap reproduces the original night-one incident verbatim. Compounding: bootstrap runs 'make test' BEFORE 'make all', so the two suite classes that scan generated-artifact content skip on an empty directory rather than fail, and nothing re-runs them after the artifacts exist. Found by the turn-4 security review.",
+    "status": "accepted",
+    "branch": null,
+    "created_turn": 4,
+    "notes": [
+      {
+        "turn": 4,
+        "text": "DATA-SAFETY. Fix: call the same data_safety_ok gate in bootstrap.sh immediately before its push loop, and order it AFTER the generated artifacts are built so the content-scanning classes actually run instead of skipping. Success = bootstrap with a seeded concrete placeholder pushes nothing and exits non-zero."
+      }
+    ]
+  },
+  {
+    "id": "i0011",
+    "title": "CONCRETE_PII misses a serial written adjacent to its prefix",
+    "kind": "code",
+    "why": "tests/test_data_safety.py:267 requires a trailing _<digits>, so a serial written with the digits after any other separator slips through. loop/JOURNAL.md carried exactly that shorthand on main and survived the turn-1 cleanup that docs/DATA-SAFETY-DEBT.md records as complete; the value it encodes occurs in the export in the thousands. Removed in c05e078. This is the same detector gap family as i0005 but a different regex: i0005's opaque-token heuristic would not catch it either, because the token is not opaque-looking.",
+    "status": "accepted",
+    "branch": null,
+    "created_turn": 4,
+    "notes": [
+      {
+        "turn": 4,
+        "text": "DATA-SAFETY. Likely one implement turn together with i0005. Fix: match the prefix plus a digit run separated by ANY non-word character, and normalise before comparing to DOCUMENTARY. Success = a test asserting the shorthand form that reached main in commit 5082319 is now detected, plus make test still green with the allowlist still capped at 8."
+      }
+    ]
+  },
+  {
+    "id": "i0012",
+    "title": "plan_turn starves the review turn whenever deck_every divides review_every",
+    "kind": "code",
+    "why": "loop/backlog.py:101-104 returns 'deck' before testing the review cadence, so every turn matching review_every also matches deck_every and review never runs. Measured over turns 1..40: (5,4) fires, but (5,10), (4,4), (5,5) and (3,6) never fire once. Current config is safe by luck, not design. Same function, loop/backlog.py:101: deck_every has no >0 guard where review_every has one and config.env documents '0 disables' only for REVIEW_EVERY -- deck_every=0 raises ZeroDivisionError, run.sh captures empty stdout with no exit check, and the loop stops logging 'unknown turn type' with the real cause buried in a log. Both verified empirically.",
+    "status": "accepted",
+    "branch": null,
+    "created_turn": 4,
+    "notes": [
+      {
+        "turn": 4,
+        "text": "Not a judgement call -- verified repro, and it silently disables the periodic security review, so it defeats a control rather than being a style opinion. Fix: guard both cadences the same way, and let review win the tie (a stale deck costs one turn; a skipped review costs the night). Success = tests/test_backlog_plan.py asserting review fires at least once per review_every*2 turns across (5,4),(5,10),(4,4),(5,5),(3,6), and that deck_every=0 disables rather than raises."
+      }
+    ]
+  },
+  {
+    "id": "i0013",
+    "title": "Two docs claim nothing leaves the machine past a red data-safety suite; three push paths bypass it",
+    "kind": "presentation",
+    "why": "docs/DATA-SAFETY-DEBT.md:61 and loop/README.md:57 both assert the gate covers every push. loop/prompts/merge.md:78, loop/prompts/deck.md:70 and loop/bootstrap.sh:100 all push directly without it, and i0007 is a fourth path. A false safety claim is worse than no claim: it is what let this review turn's predecessors stop looking. Found by the code-review skill.",
+    "status": "accepted",
+    "branch": null,
+    "created_turn": 4,
+    "notes": [
+      {
+        "turn": 4,
+        "text": "DATA-SAFETY (documentation half). Fix: restate both sentences to name exactly which push path the gate covers, and cross-reference i0007/i0009/i0010 as the paths it does not. Do this in the same turn that fixes i0010 so the doc and the code land true together."
+      }
+    ]
+  },
+  {
+    "id": "i0014",
+    "title": "TEAM_MEMBERS is empty, so the deck will render a FILL placeholder on the title slide",
+    "kind": "presentation",
+    "why": "loop/config.env sets TEAM_MEMBERS=\"\" and templates/presentation.html:34 has a '<!-- FILL: members -->' slot. Every turn prompt already renders 'Team members: [FILL]'. The team name is known (Pilotly); the member names are not on disk anywhere and no unattended turn can invent them.",
+    "status": "blocked",
+    "branch": null,
+    "created_turn": 4,
+    "notes": [
+      {
+        "turn": 4,
+        "text": "Needs a human, and it is a 30-second fix in the morning: put the names in TEAM_MEMBERS in loop/config.env before the deck is rebuilt. Flagged now because presentation clarity is judging criterion 3 and a placeholder on slide 1 is the cheapest possible own goal."
+      }
+    ]
+  },
+  {
+    "id": "i0015",
+    "title": "backlog.py turns a corrupt state file into an empty string the supervisor trusts as a scalar",
+    "kind": "code",
+    "why": "loop/backlog.py:57-66 load_backlog/load_state call json.loads with no handler, and next_id/_by_status index 'id'/'status' without .get(). run.sh captures TURN and TYPE by command substitution with no exit-code check under 'set -uo pipefail' (no -e), so any traceback becomes TYPE='' and the loop stops reporting 'unknown turn type' instead of the real cause. The atomic-write path in _write_json is sound and was verified -- this is only the read side. Found by the python-reviewer agent.",
+    "status": "proposed",
+    "branch": null,
+    "created_turn": 4,
+    "notes": []
+  },
+  {
+    "id": "i0016",
+    "title": "Push-skip compares against remote refs that are only ever fetched for main",
+    "kind": "code",
+    "why": "loop/run.sh:180 skips a branch when local_sha equals the remote-tracking sha, but sync_integration_branch fetches only INTEGRATION_BRANCH and nothing prunes. A branch rewound or deleted at origin keeps a stale tracking ref and is skipped forever, so the loop silently stops backing it up. Found by the code-review skill.",
+    "status": "proposed",
+    "branch": null,
+    "created_turn": 4,
+    "notes": []
   }
 ]
