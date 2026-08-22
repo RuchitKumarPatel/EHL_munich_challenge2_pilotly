@@ -34,16 +34,35 @@ The supervisor picks the turn type from the queue. No model discretion is involv
 in `loop/backlog.py::plan_turn`:
 
 ```
-turn % DECK_EVERY == 0  ->  deck        rebuild the slides from claims.json
-any implemented         ->  merge       second-opinion the gate, then move main
-any accepted            ->  implement   build it test-first on idea/<slug>
-any proposed            ->  evaluate    judge one idea properly, accept/reject/park
-otherwise               ->  council     refill the queue
+turn % DECK_EVERY == 0    ->  deck        rebuild the slides from claims.json
+turn % REVIEW_EVERY == 0  ->  review      quality + security over what landed since the last one
+any implemented           ->  merge       second-opinion the gate, then move main
+any accepted              ->  implement   build it test-first on idea/<slug>
+any proposed              ->  evaluate    judge one idea properly, accept/reject/park
+otherwise                 ->  council     refill the queue
 ```
 
-`merge` outranks `implement` so `main` keeps moving, which keeps every idea branch a clean
-descendant of `main` and every merge a simple one. `council` is last because it is by far the
-most expensive turn type — it only fires when the queue is genuinely dry.
+The two cadences come first for the same reason: a slide rebuild or a security pass that only
+runs when the queue happens to be empty is one that never runs on the busiest night, which is
+exactly the night it matters. `merge` outranks `implement` so `main` keeps moving, which keeps
+every idea branch a clean descendant of `main` and every merge a simple one. `council` is last
+because it is by far the most expensive turn type — it only fires when the queue is genuinely dry.
+
+A `review` turn files what it finds as backlog entries rather than fixing anything, so every fix
+still goes through `implement` and gets a test and a gate. The one exception is dataset content in
+a tracked file, which it removes on the spot.
+
+## Nothing is pushed past a red data-safety suite
+
+`push_all_branches` runs `tests/test_data_safety.py` before it contacts the remote, and pushes
+nothing at all if it is red. This is not theoretical caution. On the loop's first night,
+`bootstrap.sh` pushed every branch before any check ran, and one of them carried a postmortem
+quoting three raw identifiers straight out of `export/` — to a shared repository, for a dataset
+licensed challenge-use-only. A push cannot be taken back.
+
+The suite catches the placeholder shapes (`PII_*_<n>`, `<ENTITY_*_<n>>`). It does **not** catch
+raw un-redacted ids, which is why the review turn greps for them by hand and `_common.md` tells
+every turn to `grep -c` any concrete-looking token against `export/` before writing it down.
 
 ## Branches
 
@@ -103,6 +122,7 @@ deterministic gate. The shipped default has it on for `evaluate` only. See the c
 |---|---|
 | `loop/JOURNAL.md` | one line per turn: type, time, ok / timed out / rc, cost |
 | `docs/IDEAS.md` | the backlog rendered — what was proposed, judged, built, merged, and why |
+| `docs/REVIEW-LOG.md` | each review turn's scope, findings, and what it checked and found clean |
 | `presentation.html` | the current deck, rebuilt every `DECK_EVERY` turns |
 | `git log --oneline main` | what actually landed |
 | `loop/logs/turn-NNN-*.json` | one turn's full result, including its final message |

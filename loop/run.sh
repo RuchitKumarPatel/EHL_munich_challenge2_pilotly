@@ -145,20 +145,40 @@ sync_integration_branch() {
   return 1
 }
 
+# The gate that has to hold before anything leaves this machine. The merge gate protects `main`;
+# until this existed, nothing protected the branches -- and on the loop's first night a doc
+# quoting three raw identifiers out of export/ reached origin exactly that way, because bootstrap
+# pushed every branch before any check ran. The dataset is challenge-use-only: a push is
+# redistribution, and it cannot be taken back.
+data_safety_ok() {
+  "$PY" -m unittest tests.test_data_safety > "$LOGDIR/data-safety.log" 2>&1
+}
+
 # Every branch goes to the remote every turn, so nothing the night produces exists only on this
-# laptop -- including the branches whose ideas were rejected. `main` is the exception to the
-# blanket push: it is skipped while diverged, because pushing a diverged integration branch is
-# how a shared repository gets damaged. entire/* are the CLI's own checkpoint refs; it pushes
-# those itself.
+# laptop -- including the branches whose ideas were rejected. Two exceptions: `main` is skipped
+# while diverged, because pushing a diverged integration branch is how a shared repository gets
+# damaged, and entire/* are the CLI's own checkpoint refs, which it pushes itself.
 push_all_branches() {
   [ "$PUSH" = "1" ] || return 0
-  local br
+
+  if ! data_safety_ok; then
+    log "DATA SAFETY RED -- pushing nothing this turn (loop/logs/data-safety.log)"
+    journal "$TURN" "$TYPE" "push suppressed: tests.test_data_safety is red on the working tree"
+    return 1
+  fi
+
+  local br local_sha remote_sha
   while read -r br; do
     case "$br" in
       entire/*) continue ;;
       "$INTEGRATION_BRANCH")
         [ "$DIVERGED" = "1" ] && continue ;;
     esac
+    # Skip what the remote already has. Fewer pushes is not just faster: a branch the loop never
+    # touched has no business being re-offered to a shared repo every twenty minutes.
+    local_sha=$(git rev-parse "$br" 2>/dev/null) || continue
+    remote_sha=$(git rev-parse "$REMOTE/$br" 2>/dev/null || echo "")
+    [ "$local_sha" = "$remote_sha" ] && continue
     git push -q "$REMOTE" "$br" 2>/dev/null || log "WARN: push of $br failed"
   done < <(git for-each-ref --format='%(refname:short)' refs/heads)
 }
@@ -201,7 +221,7 @@ while true; do
     git checkout -q "$INTEGRATION_BRANCH" 2>/dev/null || log "WARN: could not check out $INTEGRATION_BRANCH"
   fi
 
-  TYPE=$("${BACKLOG[@]}" plan --deck-every "$DECK_EVERY")
+  TYPE=$("${BACKLOG[@]}" plan --deck-every "$DECK_EVERY" --review-every "$REVIEW_EVERY")
   # A diverged main makes merging unsafe; keep generating and evaluating instead.
   if [ "$DIVERGED" = "1" ] && [ "$TYPE" = "merge" ]; then
     log "turn $TURN: merge suppressed (main diverged) -> evaluate"
@@ -215,6 +235,7 @@ while true; do
     implement) TIMEOUT=$TIMEOUT_IMPLEMENT; EFFORT=$EFFORT_IMPLEMENT; ULTRA=$ULTRACODE_IMPLEMENT ;;
     merge)     TIMEOUT=$TIMEOUT_MERGE;     EFFORT=$EFFORT_MERGE;     ULTRA=$ULTRACODE_MERGE     ;;
     deck)      TIMEOUT=$TIMEOUT_DECK;      EFFORT=$EFFORT_DECK;      ULTRA=$ULTRACODE_DECK      ;;
+    review)    TIMEOUT=$TIMEOUT_REVIEW;    EFFORT=$EFFORT_REVIEW;    ULTRA=$ULTRACODE_REVIEW    ;;
     *)         log "unknown turn type '$TYPE' -- stopping"; break                               ;;
   esac
 

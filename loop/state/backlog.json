@@ -5,7 +5,7 @@
     "kind": "code",
     "why": "Evaluation rigor. results/NUMBERS.md already claims 'what router.verify checks prose against', but router/verify.py does not exist — the prose-to-claims contract is asserted, not enforced. Success = a module that scans NUMBERS.md, README.md and presentation.html, resolves every numeric literal to a stable claims.json key, and exits non-zero on any orphan.",
     "status": "accepted",
-    "branch": null,
+    "branch": "idea/router-verify",
     "created_turn": 0,
     "notes": [
       {
@@ -44,7 +44,7 @@
     "title": "Land the textclf negative result and its postmortem on main",
     "kind": "evaluation",
     "why": "Evaluation rigor, and the challenge explicitly scores naming where an estimate fails. A measured negative result with a postmortem and an ADR is presentable evidence; leaving it on an unmerged branch wastes it. Success = ADR-008 and docs/POSTMORTEM-textclf.md on main with the pipeline still green, and no torch import reachable from make all.",
-    "status": "blocked",
+    "status": "accepted",
     "branch": "text-classifier-finetune",
     "created_turn": 0,
     "notes": [
@@ -54,7 +54,26 @@
       },
       {
         "turn": 1,
-        "text": "Merge turn 1: merged CLEAN into main (no conflicts), but tests.test_data_safety.RepoSourceCarriesNoExportContent.test_no_undocumented_placeholder_in_any_repo_file FAILED on the merged result -- 81/82 pass, 1 failure. Merge reverted; main is back at f70bf1d and green (82 OK). Sole offender: docs/POSTMORTEM-textclf.md line 114 quotes the concrete placeholders PII_PERSON_N and PII_PERSON_M (the sentence explaining that redaction serials are renumbered per request). Fix is small and belongs to an implement turn -- EITHER rewrite line 114 to name the pattern generically (PII_PERSON_N / PII_PERSON_M) rather than two concrete serials, which is preferred because test_the_allowlist_stays_small caps the DOCUMENTARY allowlist, OR add both tokens to DOCUMENTARY in tests/test_data_safety.py with the renumbering finding as justification. Nothing else on the branch is wrong: the .entire/metadata offenders seen when testing the branch in isolation are an artifact of the branch base 0aa9d24 predating the tracked .entire/.gitignore that landed on main in f70bf1d -- they vanish after the merge. Branch is pushed and intact at 24e7469."
+        "text": "Merge turn 1: merged CLEAN into main (no conflicts), but tests.test_data_safety.RepoSourceCarriesNoExportContent.test_no_undocumented_placeholder_in_any_repo_file FAILED on the merged result -- 81/82 pass, 1 failure. Merge reverted; main is back at f70bf1d and green (82 OK). Sole offender: docs/POSTMORTEM-textclf.md line 114 quotes the concrete placeholders PII_PERSON_N and PII_PERSON_N (the sentence explaining that redaction serials are renumbered per request). Fix is small and belongs to an implement turn -- EITHER rewrite line 114 to name the pattern generically (PII_PERSON_N / PII_PERSON_M) rather than two concrete serials, which is preferred because test_the_allowlist_stays_small caps the DOCUMENTARY allowlist, OR add both tokens to DOCUMENTARY in tests/test_data_safety.py with the renumbering finding as justification. Nothing else on the branch is wrong: the .entire/metadata offenders seen when testing the branch in isolation are an artifact of the branch base 0aa9d24 predating the tracked .entire/.gitignore that landed on main in f70bf1d -- they vanish after the merge. Branch is pushed and intact at 24e7469."
+      },
+      {
+        "turn": 3,
+        "text": "Turn 1 blocked this on a data-safety failure. Fix first, then it can merge: docs/POSTMORTEM-textclf.md section 5 quotes two placeholder serials AND three raw identifiers that appear verbatim in the export (counts 1, 7 and 2). Replace all five with non-concrete descriptions that keep the sentence's meaning -- the point being made is that redaction serials are renumbered per request, which needs no literal serial to say. Success = make test green including tests.test_data_safety, then the merge gate passes."
+      }
+    ]
+  },
+  {
+    "id": "i0005",
+    "title": "Close the raw-identifier gap in tests/test_data_safety.py",
+    "kind": "code",
+    "why": "Data safety. The suite matches two placeholder shapes by regex but nothing catches a raw un-redacted vendor id copied out of the export -- which is how three of them reached a shared repo on night one. Success = a test that extracts opaque-looking tokens from every tracked file and fails on any whose occurrence count in export/ is nonzero, with the existing documentary allowlist honoured.",
+    "status": "accepted",
+    "branch": null,
+    "created_turn": 3,
+    "notes": [
+      {
+        "turn": 3,
+        "text": "DATA-SAFETY. Not a judgement call, skips evaluate."
       }
     ]
   }
