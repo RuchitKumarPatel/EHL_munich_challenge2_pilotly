@@ -22,9 +22,35 @@ python scripts/baseline_router.py export/
 
 # 5. Turn results into a cost–quality frontier CSV (+ PNG if matplotlib is installed):
 python scripts/plot_frontier.py results/routes.jsonl
+
+# 6. Build the local explorer site and open it:
+python scripts/build_site_data.py export/         # writes site/data.js
+xdg-open site/index.html                          # macOS: open site/index.html
 ```
 
 Python 3.10+, standard library only (matplotlib optional for the PNG).
+
+## The explorer site
+
+`site/index.html` is a self-contained local viewer for the export — no build step, no server,
+no network. It reads `site/data.js`, which `scripts/build_site_data.py` regenerates from
+`export/` and `results/routes.jsonl`. Tool arguments and outputs are unwrapped from their JSON
+encoding on the way in, so the item timeline reads as text rather than one escaped line; pass
+`--pretty` to indent `data.js` itself when you want to read or grep it by hand.
+
+Four tabs:
+
+- **Übersicht** — requests, cost and token distributions per model, tool usage, and a
+  diagnostic panel on how much trajectory structure the reconstruction actually recovers
+- **Trajektorien** — filter and search all reconstructed trajectories; drill into the call
+  sequence and the full item timeline of the sampled ones
+- **Cache-Trap** — shared-prefix share per call position, and what switching models at call *i*
+  costs on a sampled trajectory
+- **Frontier** — the cost–quality curve over adoption share, with its placeholder-quality
+  weakness stated on the chart
+
+The site embeds redacted excerpts of the dataset. `site/data.js` is gitignored — keep it local,
+do not publish or upload the rendered page.
 
 ## Using a coding agent
 
@@ -41,7 +67,8 @@ In Claude Code you also get slash commands:
 |---|---|
 | `AGENTS.md` | Agent briefing: dataset shape, the cache trap, judging, starter ideas |
 | `skills/` | The three guided workflows above (plain Markdown, readable by humans too) |
-| `scripts/` | Loader + trajectory reconstruction, baseline router, cache-aware cost model (estimated tokens), frontier plot, synthetic sample |
+| `scripts/` | Loader + trajectory reconstruction, baseline router, cache-aware cost model (estimated tokens), frontier plot, synthetic sample, site data builder |
+| `site/` | Local explorer site (`index.html`, plus the gitignored `data.js` it reads) |
 | `templates/presentation.html` | Self-contained branded slide template |
 
 ## Rules that matter

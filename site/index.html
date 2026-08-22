@@ -1,0 +1,1152 @@
+<!doctype html>
+<html lang="de" data-theme="">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Viktor Trajectory Explorer</title>
+<style>
+:root {
+  color-scheme: light;
+  --plane:          #f9f9f7;
+  --surface-1:      #fcfcfb;
+  --text-primary:   #0b0b0b;
+  --text-secondary: #52514e;
+  --text-muted:     #898781;
+  --grid:           #e1e0d9;
+  --axis:           #c3c2b7;
+  --border:         rgba(11,11,11,0.10);
+  --series-1:       #2a78d6;
+  --series-2:       #eb6834;
+  --warning:        #fab219;
+  --critical:       #d03b3b;
+  --good:           #0ca30c;
+  --hover:          rgba(11,11,11,0.04);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --plane:          #0d0d0d;
+    --surface-1:      #1a1a19;
+    --text-primary:   #ffffff;
+    --text-secondary: #c3c2b7;
+    --text-muted:     #898781;
+    --grid:           #2c2c2a;
+    --axis:           #383835;
+    --border:         rgba(255,255,255,0.10);
+    --series-1:       #3987e5;
+    --series-2:       #d95926;
+    --hover:          rgba(255,255,255,0.06);
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --plane:          #0d0d0d;
+  --surface-1:      #1a1a19;
+  --text-primary:   #ffffff;
+  --text-secondary: #c3c2b7;
+  --text-muted:     #898781;
+  --grid:           #2c2c2a;
+  --axis:           #383835;
+  --border:         rgba(255,255,255,0.10);
+  --series-1:       #3987e5;
+  --series-2:       #d95926;
+  --hover:          rgba(255,255,255,0.06);
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--plane);
+  color: var(--text-primary);
+  font: 15px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+a { color: var(--series-1); }
+.wrap { max-width: 1180px; margin: 0 auto; padding: 24px 20px 72px; }
+
+header.top { display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; margin-bottom: 4px; }
+header.top h1 { font-size: 22px; margin: 0; font-weight: 650; letter-spacing: -0.01em; }
+header.top .sub { color: var(--text-secondary); font-size: 13px; }
+header.top .spacer { flex: 1 1 auto; }
+
+button, select, input {
+  font: inherit; color: inherit;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 10px;
+}
+button { cursor: pointer; }
+button:hover { background: var(--hover); }
+button:focus-visible, input:focus-visible, select:focus-visible,
+[tabindex]:focus-visible { outline: 2px solid var(--series-1); outline-offset: 2px; }
+
+/* ---------- banner ---------- */
+.banner {
+  margin: 16px 0 20px;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--warning);
+  border-radius: 10px;
+  padding: 12px 16px;
+}
+.banner h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em;
+             color: var(--text-secondary); margin: 0 0 6px; font-weight: 600; }
+.banner ul { margin: 0; padding-left: 18px; color: var(--text-secondary); font-size: 13px; }
+.banner li { margin: 2px 0; }
+
+/* ---------- tabs ---------- */
+nav.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin-bottom: 18px; }
+nav.tabs button {
+  background: none; border: none; border-radius: 0;
+  border-bottom: 2px solid transparent;
+  padding: 9px 14px; color: var(--text-secondary); font-weight: 500;
+}
+nav.tabs button[aria-selected="true"] { color: var(--text-primary); border-bottom-color: var(--series-1); }
+
+/* ---------- filter row ---------- */
+.filters {
+  display: flex; gap: 10px; flex-wrap: wrap; align-items: center;
+  background: var(--surface-1); border: 1px solid var(--border);
+  border-radius: 10px; padding: 10px 12px; margin-bottom: 18px;
+}
+.filters label { font-size: 12px; color: var(--text-secondary); display: flex; align-items: center; gap: 6px; }
+.filters input[type="search"] { min-width: 220px; }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.chip {
+  font-size: 12px; padding: 4px 9px; border-radius: 999px;
+  border: 1px solid var(--border); background: transparent; color: var(--text-secondary);
+}
+.chip[aria-pressed="true"] { background: var(--series-1); border-color: var(--series-1); color: #fff; }
+
+/* ---------- cards & grid ---------- */
+.grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(440px, 1fr)); }
+.grid.wide > .card.span2 { grid-column: 1 / -1; }
+.card {
+  background: var(--surface-1); border: 1px solid var(--border);
+  border-radius: 12px; padding: 16px 18px 14px;
+}
+.card h3 { margin: 0 0 2px; font-size: 15px; font-weight: 600; }
+.card .note { margin: 0 0 12px; font-size: 12px; color: var(--text-muted); }
+.card .chart { overflow-x: auto; }
+.card svg { display: block; max-width: 100%; height: auto; }
+
+.tiles { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); margin-bottom: 16px; }
+.tile { background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; }
+.tile .k { font-size: 12px; color: var(--text-secondary); }
+.tile .v { font-size: 26px; font-weight: 620; letter-spacing: -0.02em; margin-top: 2px; }
+.tile .x { font-size: 12px; color: var(--text-muted); }
+
+/* ---------- legend ---------- */
+.legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--text-secondary); margin-bottom: 8px; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+
+/* ---------- tables ---------- */
+.tabletoggle { margin-top: 10px; font-size: 12px; padding: 3px 8px; color: var(--text-secondary); }
+table { border-collapse: collapse; width: 100%; font-size: 13px; margin-top: 10px; }
+th, td { text-align: left; padding: 5px 10px 5px 0; border-bottom: 1px solid var(--grid); }
+th { color: var(--text-secondary); font-weight: 600; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+.scroll { max-height: 340px; overflow: auto; }
+
+/* ---------- trajectory browser ---------- */
+.browser { display: grid; gap: 16px; grid-template-columns: minmax(320px, 400px) 1fr; align-items: start; }
+@media (max-width: 900px) { .browser { grid-template-columns: 1fr; } }
+.list { background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+.list .head { padding: 10px 14px; border-bottom: 1px solid var(--border); font-size: 12px; color: var(--text-secondary); }
+.list .rows { max-height: 620px; overflow: auto; }
+.row { padding: 9px 14px; border-bottom: 1px solid var(--grid); cursor: pointer; }
+.row:hover { background: var(--hover); }
+.row[aria-selected="true"] { background: var(--hover); box-shadow: inset 3px 0 0 var(--series-1); }
+.row .r1 { display: flex; gap: 8px; align-items: baseline; font-size: 13px; }
+.row .r1 .m { font-weight: 600; }
+.row .r1 .meta { color: var(--text-muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.row .r2 { color: var(--text-secondary); font-size: 12px; margin-top: 3px;
+           display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.more { width: 100%; border: none; border-radius: 0; padding: 10px; background: transparent; color: var(--text-secondary); font-size: 13px; }
+
+.detail { background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px; }
+.detail .empty { color: var(--text-muted); font-size: 13px; }
+.badge { display: inline-block; font-size: 11px; padding: 2px 7px; border-radius: 999px;
+         border: 1px solid var(--border); color: var(--text-secondary); margin-right: 6px; }
+.item { border-top: 1px solid var(--grid); padding: 9px 0; }
+.item .kind { font-size: 11px; font-weight: 600; color: var(--text-secondary); letter-spacing: 0.03em; }
+.item .kind .chars { font-weight: 400; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.item .kind .tool {
+  font: 11px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--series-1); background: color-mix(in srgb, var(--series-1) 12%, transparent);
+  border-radius: 4px; padding: 2px 6px; margin-left: 2px;
+}
+.item pre {
+  margin: 5px 0 0; white-space: pre-wrap; word-break: break-word;
+  font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--text-secondary); max-height: 190px; overflow: auto;
+}
+.boundary { font-size: 11px; color: var(--series-1); border-top: 1px dashed var(--series-1);
+            padding-top: 4px; margin-top: 6px; }
+
+/* ---------- tooltip ---------- */
+#tip {
+  position: fixed; pointer-events: none; z-index: 50; opacity: 0;
+  transition: opacity .08s linear;
+  background: var(--surface-1); border: 1px solid var(--border);
+  border-radius: 8px; padding: 7px 10px; font-size: 12px;
+  box-shadow: 0 6px 20px rgba(0,0,0,.18); max-width: 300px;
+}
+#tip .t { font-weight: 600; margin-bottom: 2px; }
+#tip .v { font-variant-numeric: tabular-nums; color: var(--text-secondary); }
+.hitbox { fill: transparent; cursor: crosshair; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <h1>Viktor Trajectory Explorer</h1>
+    <span class="sub" id="headsub"></span>
+    <span class="spacer"></span>
+    <button id="themebtn" title="Theme umschalten">Theme</button>
+  </header>
+
+  <div class="banner">
+    <h2>Was diese Zahlen sind — und was nicht</h2>
+    <ul id="caveats"></ul>
+  </div>
+
+  <nav class="tabs" role="tablist">
+    <button role="tab" data-tab="overview" aria-selected="true">Übersicht</button>
+    <button role="tab" data-tab="browser" aria-selected="false">Trajektorien</button>
+    <button role="tab" data-tab="cache" aria-selected="false">Cache-Trap</button>
+    <button role="tab" data-tab="frontier" aria-selected="false">Frontier</button>
+  </nav>
+
+  <div class="filters" id="filters"></div>
+  <div id="view"></div>
+</div>
+<div id="tip" role="status" aria-live="polite"></div>
+
+<script src="data.js"></script>
+<script>
+(() => {
+"use strict";
+const D = window.VIKTOR_DATA;
+if (!D) {
+  document.getElementById("view").innerHTML =
+    '<div class="card"><h3>data.js fehlt</h3><p class="note">Erst bauen: ' +
+    '<code>python scripts/build_site_data.py export/</code></p></div>';
+  return;
+}
+
+/* ------------------------------------------------------------------ utils */
+const nf = new Intl.NumberFormat("de-DE");
+const nf1 = new Intl.NumberFormat("de-DE", { maximumFractionDigits: 1 });
+const pf = new Intl.NumberFormat("de-DE", { style: "percent", maximumFractionDigits: 1 });
+const num = v => nf.format(Math.round(v));
+const usd = v => "$" + new Intl.NumberFormat("de-DE",
+  { minimumFractionDigits: v < 1 ? 4 : 2, maximumFractionDigits: v < 1 ? 4 : 2 }).format(v);
+const esc = s => String(s).replace(/[&<>"']/g, c =>
+  ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const el = (tag, cls, html) => {
+  const n = document.createElement(tag);
+  if (cls) n.className = cls;
+  if (html != null) n.innerHTML = html;
+  return n;
+};
+const SVGNS = "http://www.w3.org/2000/svg";
+const svgEl = (tag, attrs) => {
+  const n = document.createElementNS(SVGNS, tag);
+  for (const k in attrs) n.setAttribute(k, attrs[k]);
+  return n;
+};
+
+/* ---------------------------------------------------------------- tooltip */
+const tip = document.getElementById("tip");
+function showTip(ev, title, lines) {
+  tip.innerHTML = '<div class="t">' + esc(title) + "</div>" +
+    lines.map(l => '<div class="v">' + esc(l) + "</div>").join("");
+  tip.style.opacity = "1";
+  moveTip(ev);
+}
+function moveTip(ev) {
+  const r = tip.getBoundingClientRect();
+  let x = ev.clientX + 14, y = ev.clientY + 14;
+  if (x + r.width > innerWidth - 8) x = ev.clientX - r.width - 14;
+  if (y + r.height > innerHeight - 8) y = ev.clientY - r.height - 14;
+  tip.style.left = x + "px";
+  tip.style.top = y + "px";
+}
+const hideTip = () => { tip.style.opacity = "0"; };
+function bindTip(node, title, lines) {
+  node.addEventListener("mouseenter", e => showTip(e, title, lines));
+  node.addEventListener("mousemove", moveTip);
+  node.addEventListener("mouseleave", hideTip);
+  node.addEventListener("focus", e => {
+    const b = node.getBoundingClientRect();
+    showTip({ clientX: b.left + b.width / 2, clientY: b.top }, title, lines);
+  });
+  node.addEventListener("blur", hideTip);
+}
+
+/* ----------------------------------------------------------- chart pieces */
+const GAP = 2;          // surface gap between fills
+const R = 4;            // rounded data-end
+const AXIS_H = 26, LEFT = 52, TOP = 12, RIGHT = 12;
+
+/** Bar path with only the data-end rounded, anchored to the baseline. */
+function barPathV(x, y, w, h) {          // vertical, grows up from y+h
+  const r = Math.min(R, w / 2, h);
+  if (h <= 0.5) return `M${x} ${y + h}h${w}`;
+  return `M${x} ${y + h}V${y + r}a${r} ${r} 0 0 1 ${r} ${-r}h${w - 2 * r}a${r} ${r} 0 0 1 ${r} ${r}V${y + h}Z`;
+}
+function barPathH(x, y, w, h) {          // horizontal, grows right from x
+  const r = Math.min(R, h / 2, w);
+  if (w <= 0.5) return `M${x} ${y}v${h}`;
+  return `M${x} ${y}h${w - r}a${r} ${r} 0 0 1 ${r} ${r}v${h - 2 * r}a${r} ${r} 0 0 1 ${-r} ${r}H${x}Z`;
+}
+function niceMax(v) {
+  if (v <= 0) return 1;
+  const p = Math.pow(10, Math.floor(Math.log10(v)));
+  const s = v / p;
+  return (s <= 1 ? 1 : s <= 2 ? 2 : s <= 2.5 ? 2.5 : s <= 5 ? 5 : 10) * p;
+}
+function yGrid(svg, w, h, max, fmt) {
+  const steps = 4;
+  for (let i = 0; i <= steps; i++) {
+    const v = (max / steps) * i, y = TOP + h - (v / max) * h;
+    svg.appendChild(svgEl("line", { x1: LEFT, x2: LEFT + w, y1: y, y2: y,
+      stroke: i ? "var(--grid)" : "var(--axis)", "stroke-width": 1 }));
+    const t = svgEl("text", { x: LEFT - 8, y: y + 4, "text-anchor": "end",
+      fill: "var(--text-muted)", "font-size": 11, style: "font-variant-numeric:tabular-nums" });
+    t.textContent = fmt(v);
+    svg.appendChild(t);
+  }
+}
+
+/**
+ * Vertical bar chart. data: [{label, value, tip?}]
+ * One series -> one color (slot 1); never a value ramp on nominal categories.
+ */
+function barChart(host, data, opts = {}) {
+  const fmt = opts.fmt || num;
+  const w = Math.max(opts.width || 0, Math.min(720, Math.max(280, data.length * 34)));
+  const plotW = w - LEFT - RIGHT, plotH = opts.height || 190;
+  const labelH = opts.labelAngle ? 62 : AXIS_H;
+  const h = TOP + plotH + labelH;
+  const svg = svgEl("svg", { viewBox: `0 0 ${w} ${h}`, width: w, height: h, role: "img" });
+  const max = niceMax(Math.max(...data.map(d => d.value), 0));
+  yGrid(svg, plotW, plotH, max, opts.axisFmt || (v => v >= 1000 ? nf1.format(v / 1000) + "k" : nf1.format(v)));
+  const band = plotW / data.length;
+  data.forEach((d, i) => {
+    const bw = Math.max(1, band - GAP * 2);
+    const x = LEFT + i * band + GAP;
+    const bh = (d.value / max) * plotH;
+    const y = TOP + plotH - bh;
+    svg.appendChild(svgEl("path", { d: barPathV(x, y, bw, bh), fill: opts.color || "var(--series-1)" }));
+    const lbl = svgEl("text", {
+      x: LEFT + i * band + band / 2, y: TOP + plotH + 15,
+      "text-anchor": opts.labelAngle ? "end" : "middle",
+      fill: "var(--text-muted)", "font-size": 11
+    });
+    if (opts.labelAngle) lbl.setAttribute("transform",
+      `rotate(-40 ${LEFT + i * band + band / 2} ${TOP + plotH + 15})`);
+    lbl.textContent = d.label;
+    svg.appendChild(lbl);
+    const hit = svgEl("rect", { class: "hitbox", x: LEFT + i * band, y: TOP,
+      width: Math.max(band, 24), height: plotH, tabindex: 0 });
+    bindTip(hit, d.label, d.tip || [fmt(d.value)]);
+    svg.appendChild(hit);
+  });
+  host.appendChild(svg);
+}
+
+/** Horizontal bar chart — for long category names. data: [{label, value, tip?}] */
+function hbarChart(host, data, opts = {}) {
+  const fmt = opts.fmt || num;
+  const labelW = opts.labelW || 190;
+  const w = opts.width || 640, rowH = 24;
+  const h = TOP + data.length * rowH + 6;
+  const plotW = w - labelW - RIGHT - 60;
+  const svg = svgEl("svg", { viewBox: `0 0 ${w} ${h}`, width: w, height: h, role: "img" });
+  const max = niceMax(Math.max(...data.map(d => d.value), 0));
+  data.forEach((d, i) => {
+    const y = TOP + i * rowH;
+    const bh = rowH - GAP * 2;
+    const bw = (d.value / max) * plotW;
+    const lbl = svgEl("text", { x: labelW - 10, y: y + bh / 2 + 4, "text-anchor": "end",
+      fill: "var(--text-secondary)", "font-size": 12 });
+    lbl.textContent = d.label;
+    svg.appendChild(lbl);
+    svg.appendChild(svgEl("path", { d: barPathH(labelW, y + GAP, bw, bh),
+      fill: opts.color || "var(--series-1)" }));
+    const val = svgEl("text", { x: labelW + bw + 8, y: y + bh / 2 + 4,
+      fill: "var(--text-muted)", "font-size": 11, style: "font-variant-numeric:tabular-nums" });
+    val.textContent = fmt(d.value);
+    svg.appendChild(val);
+    const hit = svgEl("rect", { class: "hitbox", x: 0, y: y, width: w, height: rowH, tabindex: 0 });
+    bindTip(hit, d.label, d.tip || [fmt(d.value)]);
+    svg.appendChild(hit);
+  });
+  host.appendChild(svg);
+}
+
+/** Stacked horizontal bars, two series. data: [{label, a, b, tip?}] */
+function stackedChart(host, data, opts = {}) {
+  const labelW = opts.labelW || 96, w = opts.width || 620, rowH = 26;
+  const h = TOP + data.length * rowH + 6;
+  const plotW = w - labelW - RIGHT - 80;
+  const svg = svgEl("svg", { viewBox: `0 0 ${w} ${h}`, width: w, height: h, role: "img" });
+  const max = niceMax(Math.max(...data.map(d => d.a + d.b), 0));
+  data.forEach((d, i) => {
+    const y = TOP + i * rowH, bh = rowH - GAP * 3;
+    const wa = (d.a / max) * plotW, wb = (d.b / max) * plotW;
+    const lbl = svgEl("text", { x: labelW - 10, y: y + bh / 2 + 4, "text-anchor": "end",
+      fill: "var(--text-secondary)", "font-size": 12 });
+    lbl.textContent = d.label;
+    svg.appendChild(lbl);
+    if (wa > 0) svg.appendChild(svgEl("rect", { x: labelW, y: y + GAP, width: wa, height: bh,
+      fill: "var(--series-2)" }));
+    if (wb > 0) svg.appendChild(svgEl("path", {
+      d: barPathH(labelW + wa + (wa > 0 ? GAP : 0), y + GAP, Math.max(0, wb - (wa > 0 ? GAP : 0)), bh),
+      fill: "var(--series-1)" }));
+    const val = svgEl("text", { x: labelW + wa + wb + 10, y: y + bh / 2 + 4,
+      fill: "var(--text-muted)", "font-size": 11, style: "font-variant-numeric:tabular-nums" });
+    val.textContent = num(d.a + d.b);
+    svg.appendChild(val);
+    const hit = svgEl("rect", { class: "hitbox", x: 0, y: y, width: w, height: rowH, tabindex: 0 });
+    bindTip(hit, d.label, d.tip || []);
+    svg.appendChild(hit);
+  });
+  host.appendChild(svg);
+}
+
+/**
+ * Line/scatter on one axis. points: [{x, y, label?, tip?}]
+ * Optional band: [{x, lo, hi}] drawn behind the line.
+ */
+function lineChart(host, points, opts = {}) {
+  const w = opts.width || 620, plotH = opts.height || 220;
+  // Direct labels sit beside their point, so they need room the plot must not use.
+  const right = points.some(p => p.label) ? 56 : RIGHT;
+  const h = TOP + plotH + AXIS_H + 16, plotW = w - LEFT - right;
+  const svg = svgEl("svg", { viewBox: `0 0 ${w} ${h}`, width: w, height: h, role: "img" });
+  const xs = points.map(p => p.x), ys = points.map(p => p.y);
+  const x0 = opts.x0 != null ? opts.x0 : Math.min(...xs);
+  const x1 = opts.x1 != null ? opts.x1 : Math.max(...xs);
+  const y0 = opts.y0 != null ? opts.y0 : 0;
+  const y1 = opts.y1 != null ? opts.y1 : niceMax(Math.max(...ys));
+  const sx = v => LEFT + (x1 === x0 ? plotW / 2 : ((v - x0) / (x1 - x0)) * plotW);
+  const sy = v => TOP + plotH - (y1 === y0 ? plotH / 2 : ((v - y0) / (y1 - y0)) * plotH);
+  // y grid
+  for (let i = 0; i <= 4; i++) {
+    const v = y0 + ((y1 - y0) / 4) * i, y = sy(v);
+    svg.appendChild(svgEl("line", { x1: LEFT, x2: LEFT + plotW, y1: y, y2: y,
+      stroke: i ? "var(--grid)" : "var(--axis)", "stroke-width": 1 }));
+    const t = svgEl("text", { x: LEFT - 8, y: y + 4, "text-anchor": "end", fill: "var(--text-muted)",
+      "font-size": 11, style: "font-variant-numeric:tabular-nums" });
+    t.textContent = (opts.yFmt || nf1.format)(v);
+    svg.appendChild(t);
+  }
+  // x ticks
+  const nTicks = opts.xTicks || 4;
+  for (let i = 0; i <= nTicks; i++) {
+    const v = x0 + ((x1 - x0) / nTicks) * i;
+    const t = svgEl("text", { x: sx(v), y: TOP + plotH + 17, "text-anchor": "middle",
+      fill: "var(--text-muted)", "font-size": 11, style: "font-variant-numeric:tabular-nums" });
+    t.textContent = (opts.xFmt || nf1.format)(v);
+    svg.appendChild(t);
+  }
+  if (opts.band && opts.band.length) {
+    const up = opts.band.map(b => `${sx(b.x)},${sy(b.hi)}`).join(" ");
+    const dn = opts.band.slice().reverse().map(b => `${sx(b.x)},${sy(b.lo)}`).join(" ");
+    svg.appendChild(svgEl("polygon", { points: up + " " + dn,
+      fill: "var(--series-1)", opacity: 0.14 }));
+  }
+  svg.appendChild(svgEl("polyline", {
+    points: points.map(p => `${sx(p.x)},${sy(p.y)}`).join(" "),
+    fill: "none", stroke: "var(--series-1)", "stroke-width": 2,
+    "stroke-linejoin": "round", "stroke-linecap": "round" }));
+  points.forEach((p, i) => {
+    svg.appendChild(svgEl("circle", { cx: sx(p.x), cy: sy(p.y), r: 5,
+      fill: "var(--series-1)", stroke: "var(--surface-1)", "stroke-width": 2 }));
+    if (p.label) {
+      // Keep the label inside the plot: pull it in at the edges instead of
+      // letting it hang off the chart or collide with the y-axis ticks.
+      const frac = (sx(p.x) - LEFT) / plotW;
+      const anchor = frac < 0.15 ? "start" : frac > 0.85 ? "end" : "middle";
+      const dx = anchor === "start" ? 10 : anchor === "end" ? -10 : 0;
+      const above = sy(p.y) - 12;
+      const ly = above < TOP + 10 ? sy(p.y) + 18 : above;   // flip below near the top edge
+      const t = svgEl("text", { x: sx(p.x) + dx, y: ly, "text-anchor": anchor,
+        fill: "var(--text-secondary)", "font-size": 11 });
+      t.textContent = p.label;
+      svg.appendChild(t);
+    }
+    const hit = svgEl("circle", { class: "hitbox", cx: sx(p.x), cy: sy(p.y), r: 14, tabindex: 0 });
+    bindTip(hit, p.tipTitle || "Punkt " + (i + 1), p.tip || []);
+    svg.appendChild(hit);
+  });
+  if (opts.xLabel) {
+    const t = svgEl("text", { x: LEFT + plotW / 2, y: h - 2, "text-anchor": "middle",
+      fill: "var(--text-muted)", "font-size": 11 });
+    t.textContent = opts.xLabel;
+    svg.appendChild(t);
+  }
+  host.appendChild(svg);
+}
+
+/**
+ * Charts are drawn only once their card is in the DOM, so each one can be laid
+ * out against the width it actually gets. Scaling a fixed-width SVG down inside
+ * a narrow card shrinks its labels along with it.
+ */
+const PENDING = [];
+function queue(cardObj, draw) {
+  PENDING.push(() => draw(cardObj.chart, Math.max(280, cardObj.chart.clientWidth)));
+}
+function flushDraws() {
+  const jobs = PENDING.splice(0);
+  jobs.forEach(f => f());
+}
+
+/** Card shell: title, note, chart host, legend, and a table-view twin. */
+function card(title, note, opts = {}) {
+  const c = el("div", "card" + (opts.span2 ? " span2" : ""));
+  c.appendChild(el("h3", null, esc(title)));
+  if (note) c.appendChild(el("p", "note", note));
+  if (opts.legend) {
+    const lg = el("div", "legend");
+    lg.innerHTML = opts.legend.map(s =>
+      `<span><i style="background:${s.color}"></i>${esc(s.label)}</span>`).join("");
+    c.appendChild(lg);
+  }
+  const chart = el("div", "chart");
+  c.appendChild(chart);
+  c.chart = chart;
+  if (opts.table) {
+    const btn = el("button", "tabletoggle", "Tabelle anzeigen");
+    const box = el("div", "scroll");
+    box.style.display = "none";
+    box.innerHTML = tableHTML(opts.table.cols, opts.table.rows);
+    btn.onclick = () => {
+      const on = box.style.display === "none";
+      box.style.display = on ? "" : "none";
+      btn.textContent = on ? "Tabelle ausblenden" : "Tabelle anzeigen";
+    };
+    c.appendChild(btn);
+    c.appendChild(box);
+  }
+  return c;
+}
+/** Footnote under the chart but above the table toggle, so it reads with the chart. */
+function cardNote(cardObj, node) {
+  const anchor = cardObj.querySelector(".tabletoggle");
+  anchor ? cardObj.insertBefore(node, anchor) : cardObj.appendChild(node);
+  return node;
+}
+
+function tableHTML(cols, rows) {
+  return "<table><thead><tr>" +
+    cols.map(c => `<th class="${c.num ? "num" : ""}">${esc(c.label)}</th>`).join("") +
+    "</tr></thead><tbody>" +
+    rows.map(r => "<tr>" + cols.map(c =>
+      `<td class="${c.num ? "num" : ""}">${esc(c.get(r))}</td>`).join("") + "</tr>").join("") +
+    "</tbody></table>";
+}
+function tile(k, v, x) {
+  const t = el("div", "tile");
+  t.innerHTML = `<div class="k">${esc(k)}</div><div class="v">${esc(v)}</div>` +
+    (x ? `<div class="x">${esc(x)}</div>` : "");
+  return t;
+}
+
+/* -------------------------------------------------------------- app state */
+const ALL_MODELS = D.models.map(m => m.model);
+const state = {
+  tab: "overview",
+  models: new Set(ALL_MODELS),
+  minCalls: 1,
+  q: "",
+  sort: "calls",
+  limit: 100,
+  selected: null,
+  sampleId: null,
+};
+const SAMPLE_IDS = Object.keys(D.samples);
+const MULTI_SAMPLES = D.trajectories.filter(t => t.n_calls > 1 && D.samples[t.id]);
+state.sampleId = (MULTI_SAMPLES[0] || { id: SAMPLE_IDS[0] }).id;
+
+function filtered() {
+  const q = state.q.trim().toLowerCase();
+  return D.trajectories.filter(t =>
+    t.models.some(m => state.models.has(m)) &&
+    t.n_calls >= state.minCalls &&
+    (!q || t.preview.toLowerCase().includes(q) || t.id.includes(q) ||
+      Object.keys(t.tool_calls || {}).some(n => n.toLowerCase().includes(q))));
+}
+function sorted(list) {
+  const s = state.sort;
+  const key = { calls: t => -t.n_calls, tokens: t => -t.est_tokens,
+    cost: t => -(t.cost_logged_usd || 0), tools: t => -t.n_tool_calls }[s] || (t => -t.n_calls);
+  return list.slice().sort((a, b) => key(a) - key(b) || a.id.localeCompare(b.id));
+}
+
+/* ------------------------------------------------------------- filter row */
+function renderFilters() {
+  const f = document.getElementById("filters");
+  f.style.display = (state.tab === "overview" || state.tab === "browser") ? "" : "none";
+  if (f.style.display === "none") { f.innerHTML = ""; return; }
+  f.innerHTML = "";
+  const chips = el("div", "chips");
+  ALL_MODELS.forEach(m => {
+    const b = el("button", "chip", esc(m));
+    b.setAttribute("aria-pressed", state.models.has(m));
+    b.onclick = () => {
+      state.models.has(m) ? state.models.delete(m) : state.models.add(m);
+      if (!state.models.size) ALL_MODELS.forEach(x => state.models.add(x));
+      render();
+    };
+    chips.appendChild(b);
+  });
+  const lblM = el("label", null, "Modell");
+  lblM.appendChild(chips);
+  f.appendChild(lblM);
+
+  const lblC = el("label", null, "min. Calls ");
+  const sel = el("select");
+  [1, 2, 3, 4, 5].forEach(v => {
+    const o = el("option", null, String(v));
+    o.value = v;
+    if (v === state.minCalls) o.selected = true;
+    sel.appendChild(o);
+  });
+  sel.onchange = () => { state.minCalls = +sel.value; state.limit = 100; render(); };
+  lblC.appendChild(sel);
+  f.appendChild(lblC);
+
+  const lblQ = el("label", null, "Suche ");
+  const inp = el("input");
+  inp.type = "search";
+  inp.placeholder = "Prompt-Text, Tool oder id";
+  inp.value = state.q;
+  inp.oninput = () => { state.q = inp.value; state.limit = 100; render(); };
+  lblQ.appendChild(inp);
+  f.appendChild(lblQ);
+
+  if (state.tab === "browser") {
+    const lblS = el("label", null, "Sortierung ");
+    const s2 = el("select");
+    [["calls", "Calls"], ["tokens", "est. Tokens"], ["cost", "est. Kosten"], ["tools", "Tool-Calls"]]
+      .forEach(([v, t]) => {
+        const o = el("option", null, t);
+        o.value = v;
+        if (v === state.sort) o.selected = true;
+        s2.appendChild(o);
+      });
+    s2.onchange = () => { state.sort = s2.value; render(); };
+    lblS.appendChild(s2);
+    f.appendChild(lblS);
+  }
+
+  const reset = el("button", null, "Filter zurücksetzen");
+  reset.onclick = () => {
+    state.models = new Set(ALL_MODELS);
+    state.minCalls = 1; state.q = ""; state.limit = 100;
+    render();
+  };
+  f.appendChild(reset);
+  f.appendChild(el("span", null,
+    `<span style="font-size:12px;color:var(--text-muted)">${num(filtered().length)} / ${num(D.trajectories.length)} Trajektorien</span>`));
+}
+
+/* -------------------------------------------------------------- overview */
+function viewOverview(host) {
+  const list = filtered();
+  const dg = D.diagnostics;
+  const reqs = list.reduce((s, t) => s + t.n_calls, 0);
+  const toks = list.reduce((s, t) => s + t.est_tokens, 0);
+  const cost = list.reduce((s, t) => s + (t.cost_logged_usd || 0), 0);
+
+  const tiles = el("div", "tiles");
+  tiles.appendChild(tile("Requests", num(reqs), `von ${num(dg.n_requests)} im Export`));
+  tiles.appendChild(tile("Trajektorien (rekonstruiert)", num(list.length),
+    `${num(list.filter(t => t.n_calls === 1).length)} davon mit nur 1 Call`));
+  tiles.appendChild(tile("est. Input-Tokens", num(toks), "chars/4, über Requests summiert"));
+  tiles.appendChild(tile("est. Kosten (logged)", usd(cost), "nur Input, angenommene Preise"));
+  host.appendChild(tiles);
+
+  const grid = el("div", "grid wide");
+
+  // requests per model
+  const byModel = new Map();
+  list.forEach(t => {
+    const m = t.model;
+    const e = byModel.get(m) || { requests: 0, traj: 0, tokens: 0, cost: 0 };
+    e.requests += t.n_calls; e.traj += 1; e.tokens += t.est_tokens;
+    e.cost += t.cost_logged_usd || 0;
+    byModel.set(m, e);
+  });
+  const mRows = [...byModel.entries()].map(([m, e]) => ({ model: m, ...e }))
+    .sort((a, b) => b.requests - a.requests);
+
+  const c1 = card("Requests je Modell", "Ein Balken = ein anonymisiertes Modell-id.", {
+    table: { cols: [
+      { label: "Modell", get: r => r.model },
+      { label: "Requests", num: true, get: r => num(r.requests) },
+      { label: "Trajektorien", num: true, get: r => num(r.traj) },
+      { label: "est. Tokens", num: true, get: r => num(r.tokens) }],
+      rows: mRows } });
+  queue(c1, (h, w) => hbarChart(h, mRows.map(r => ({
+    label: r.model, value: r.requests,
+    tip: [`${num(r.requests)} Requests`, `${num(r.traj)} Trajektorien`,
+      `${num(r.tokens)} est. Tokens`] })), { labelW: Math.min(160, w * 0.34), width: w }));
+  grid.appendChild(c1);
+
+  const c2 = card("Geschätzte Kosten je Modell",
+    "Nur Input, cache-aware, angenommene Preise. Getrennte Achse — bewusst kein Dual-Axis-Chart.", {
+    table: { cols: [
+      { label: "Modell", get: r => r.model },
+      { label: "est. Kosten", num: true, get: r => usd(r.cost) },
+      { label: "Anteil", num: true, get: r => pf.format(r.cost / (cost || 1)) }],
+      rows: [...mRows].sort((a, b) => b.cost - a.cost) } });
+  queue(c2, (h, w) => hbarChart(h, [...mRows].sort((a, b) => b.cost - a.cost).map(r => ({
+    label: r.model, value: r.cost,
+    tip: [usd(r.cost), pf.format(r.cost / (cost || 1)) + " der Gesamtkosten"] })),
+    { labelW: Math.min(160, w * 0.34), width: w, fmt: usd }));
+  grid.appendChild(c2);
+
+  // calls per trajectory
+  const cpt = new Map();
+  list.forEach(t => cpt.set(t.n_calls, (cpt.get(t.n_calls) || 0) + 1));
+  const cptRows = [...cpt.entries()].sort((a, b) => a[0] - b[0])
+    .map(([n, c]) => ({ n, c }));
+  const c3 = card("Calls pro rekonstruierter Trajektorie",
+    "Log-Skala wäre hier irreführend — die Verteilung ist extrem einseitig.", {
+    table: { cols: [
+      { label: "Calls", num: true, get: r => r.n },
+      { label: "Trajektorien", num: true, get: r => num(r.c) }],
+      rows: cptRows } });
+  queue(c3, (h, w) => barChart(h, cptRows.map(r => ({
+    label: String(r.n), value: r.c,
+    tip: [`${num(r.c)} Trajektorien mit ${r.n} Call(s)`] })), { width: w }));
+  grid.appendChild(c3);
+
+  // token histogram (per trajectory, filtered)
+  const vals = list.map(t => t.max_input_tokens).filter(v => v > 0);
+  const hist = logHist(vals, 20);
+  const c4 = card("Größe des längsten Inputs je Trajektorie",
+    "est. Tokens (chars/4), log-verteilte Klassen.", {
+    table: { cols: [
+      { label: "von", num: true, get: r => num(r.lo) },
+      { label: "bis", num: true, get: r => num(r.hi) },
+      { label: "Trajektorien", num: true, get: r => num(r.count) }],
+      rows: hist } });
+  queue(c4, (h, w) => barChart(h, hist.map((b, i) => ({
+    label: i % 2 === 0 ? shortNum(b.lo) : "", value: b.count,
+    tip: [`${num(b.lo)}–${num(b.hi)} est. Tokens`, `${num(b.count)} Trajektorien`] })),
+    { width: w, labelAngle: true }));
+  grid.appendChild(c4);
+
+  // tools
+  const toolC = new Map();
+  list.forEach(t => {
+    for (const [n, c] of Object.entries(t.tool_calls || {})) toolC.set(n, (toolC.get(n) || 0) + c);
+  });
+  const toolRows = [...toolC.entries()].map(([name, calls]) => ({ name, calls }))
+    .sort((a, b) => b.calls - a.calls);
+  const avail = new Map(D.tools.map(t => [t.name, t.available_in_requests]));
+  const c5 = card("Tool-Aufrufe in den Traces", "Top 14 nach Häufigkeit. Pro Trajektorie einmal " +
+    "gezählt (der letzte Call enthält die ganze Historie).", {
+    span2: true,
+    table: { cols: [
+      { label: "Tool", get: r => r.name },
+      { label: "Aufrufe", num: true, get: r => num(r.calls) },
+      { label: "angeboten in Requests", num: true, get: r => num(avail.get(r.name) || 0) }],
+      rows: toolRows } });
+  queue(c5, (h, w) => hbarChart(h, toolRows.slice(0, 14).map(r => ({
+    label: r.name, value: r.calls,
+    tip: [`${num(r.calls)} Aufrufe`,
+      `in ${num(avail.get(r.name) || 0)} Requests angeboten`] })),
+    { labelW: Math.min(250, w * 0.3), width: w }));
+  grid.appendChild(c5);
+
+  host.appendChild(grid);
+
+  // grouping diagnostics
+  const share = dg.consecutive_pairs
+    ? dg.consecutive_pairs_with_shared_prefix / dg.consecutive_pairs : 0;
+  const diag = card("Wie gut ist die Trajektorien-Rekonstruktion?",
+    "Ohne Trajektorien-ids gruppiert der Loader auf dem ersten User-Text. Diese Zahlen sagen, " +
+    "wie viel Struktur das tatsächlich zurückholt — im Zweifel wenig. " +
+    "Immer über den gesamten Export, der Filter oben greift hier nicht.", { span2: true });
+  diag.chart.innerHTML = `
+    <table>
+      <tbody>
+        <tr><td>Requests</td><td class="num">${num(dg.n_requests)}</td></tr>
+        <tr><td>Gruppen (= Trajektorien-Kandidaten)</td><td class="num">${num(dg.n_trajectories)}</td></tr>
+        <tr><td>davon Singletons</td><td class="num">${num(dg.n_singletons)}
+            (${pf.format(dg.n_singletons / dg.n_trajectories)})</td></tr>
+        <tr><td>aufeinanderfolgende Call-Paare</td><td class="num">${num(dg.consecutive_pairs)}</td></tr>
+        <tr><td><strong>davon mit geteiltem Prefix</strong></td>
+            <td class="num"><strong>${num(dg.consecutive_pairs_with_shared_prefix)}
+            (${pf.format(share)})</strong></td></tr>
+        <tr><td>Gruppen mit &gt;1 Modell</td><td class="num">${num(dg.mixed_model_trajectories)}</td></tr>
+        <tr><td>verschiedene System-Prompts (erstes Item)</td>
+            <td class="num">${num(dg.n_system_prompt_variants)}</td></tr>
+      </tbody>
+    </table>
+    <p class="note" style="margin-top:12px">
+      Ein echtes Call-Paar derselben Task teilt seine ersten Items. Nur
+      <strong>${pf.format(share)}</strong> der Paare tun das — der Rest sind vermutlich
+      Fehl-Merges (ähnlicher Opening-Text, verschiedene Tasks). Dazu passt, dass
+      ${num(dg.mixed_model_trajectories)} Gruppen mehrere Modelle enthalten, obwohl die Prämisse
+      ein Modell pro Trajektorie sagt. Wahrscheinlichste Ursache: dieser Export-Chunk enthält
+      nur einen Teil der Calls; der Rest liegt in anderen Chunks.
+      <strong>Konsequenz für das Routing:</strong> Cache- und Switch-Effekte lassen sich auf
+      diesem Chunk allein kaum messen.
+    </p>`;
+  host.appendChild(diag);
+}
+function logHist(vals, n) {
+  if (!vals.length) return [];
+  const lo = Math.min(...vals), hi = Math.max(...vals);
+  if (lo === hi) return [{ lo, hi, count: vals.length }];
+  const l0 = Math.log10(lo), l1 = Math.log10(hi);
+  const counts = new Array(n).fill(0);
+  vals.forEach(v => {
+    counts[Math.min(n - 1, Math.floor(((Math.log10(v) - l0) / (l1 - l0)) * n))]++;
+  });
+  return counts.map((c, i) => ({
+    lo: Math.round(Math.pow(10, l0 + ((l1 - l0) * i) / n)),
+    hi: Math.round(Math.pow(10, l0 + ((l1 - l0) * (i + 1)) / n)),
+    count: c }));
+}
+const shortNum = v => v >= 1000 ? Math.round(v / 1000) + "k" : String(v);
+
+/* --------------------------------------------------------------- browser */
+function viewBrowser(host) {
+  const list = sorted(filtered());
+  const box = el("div", "browser");
+
+  const left = el("div", "list");
+  left.appendChild(el("div", "head",
+    `${num(list.length)} Treffer · ${num(D.meta.n_samples)} Trajektorien haben Detail-Daten`));
+  const rows = el("div", "rows");
+  list.slice(0, state.limit).forEach(t => {
+    const r = el("div", "row");
+    r.tabIndex = 0;
+    r.setAttribute("aria-selected", state.selected === t.id);
+    const hasDetail = !!D.samples[t.id];
+    r.innerHTML =
+      `<div class="r1"><span class="m">${esc(t.model)}</span>` +
+      `<span class="meta">${t.n_calls} Call${t.n_calls > 1 ? "s" : ""} · ` +
+      `${num(t.max_input_tokens)} tok · ${t.cost_logged_usd != null ? usd(t.cost_logged_usd) : "–"}</span>` +
+      (hasDetail ? "" : `<span class="meta" title="kein Item-Detail im Sample">·  nur Metadaten</span>`) +
+      `</div><div class="r2">${esc(t.preview)}</div>`;
+    const pick = () => { state.selected = t.id; render(); };
+    r.onclick = pick;
+    r.onkeydown = e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pick(); } };
+    rows.appendChild(r);
+  });
+  left.appendChild(rows);
+  if (list.length > state.limit) {
+    const more = el("button", "more", `weitere ${num(Math.min(100, list.length - state.limit))} laden`);
+    more.onclick = () => { state.limit += 100; render(); };
+    left.appendChild(more);
+  }
+  box.appendChild(left);
+
+  const right = el("div", "detail");
+  const t = D.trajectories.find(x => x.id === state.selected);
+  if (!t) {
+    right.appendChild(el("p", "empty", "Links eine Trajektorie wählen."));
+  } else {
+    renderDetail(right, t);
+  }
+  box.appendChild(right);
+  host.appendChild(box);
+}
+
+function renderDetail(host, t) {
+  const s = D.samples[t.id];
+  host.appendChild(el("h3", null, `Trajektorie ${esc(t.id)}`));
+  const badges = el("p", null,
+    t.models.map(m => `<span class="badge">${esc(m)}</span>`).join("") +
+    `<span class="badge">${t.n_calls} Calls</span>` +
+    `<span class="badge">${num(t.max_input_tokens)} est. Tokens</span>` +
+    `<span class="badge">${t.n_tools_available} Tools verfügbar</span>` +
+    (t.cost_logged_usd != null ? `<span class="badge">${usd(t.cost_logged_usd)} logged</span>` : "") +
+    (t.rerouted ? `<span class="badge">Baseline reroutet</span>` : ""));
+  host.appendChild(badges);
+  if (t.models.length > 1) {
+    host.appendChild(el("p", "note",
+      "Mehrere Modelle in einer Gruppe — die Prämisse sagt ein Modell pro Trajektorie. " +
+      "Sehr wahrscheinlich ein Fehl-Merge der Rekonstruktion, kein echter Modellwechsel."));
+  }
+  if (!s) {
+    host.appendChild(el("p", "empty",
+      "Für diese Trajektorie liegt kein Item-Detail im Sample (nur die " +
+      D.meta.n_samples + " größten sind enthalten). Vorschau des Openings:"));
+    host.appendChild(el("pre", null, esc(t.preview)));
+    return;
+  }
+
+  // per-call token split
+  const cc = card("Input je Call: gecacht vs. neu",
+    "Gecachter Anteil ist aus Item-Prefix-Overlap geschätzt, nicht gemessen.", {
+    legend: [{ color: "var(--series-2)", label: "geteilter Prefix (cachebar)" },
+             { color: "var(--series-1)", label: "neu (voller Preis)" }],
+    table: { cols: [
+      { label: "Call", num: true, get: r => r.i },
+      { label: "Modell", get: r => r.model },
+      { label: "Items", num: true, get: r => r.n_items },
+      { label: "est. Tokens", num: true, get: r => num(r.est_tokens) },
+      { label: "gecacht", num: true, get: r => num(r.shared_prefix_tokens) }],
+      rows: s.calls.map((c, i) => ({ i: i + 1, ...c })) } });
+  queue(cc, (h, w) => stackedChart(h, s.calls.map((c, i) => ({
+    label: "Call " + (i + 1), a: c.shared_prefix_tokens, b: c.uncached_tokens,
+    tip: [c.model, `${num(c.est_tokens)} est. Tokens gesamt`,
+      `${num(c.shared_prefix_tokens)} davon geteilter Prefix`,
+      `${num(c.uncached_tokens)} neu`] })), { width: w, labelW: 70 }));
+  host.appendChild(cc);
+
+  // item timeline with call boundaries
+  // Several calls can end at the same item count (a sign the group merged
+  // distinct tasks), so a boundary marks every call that ends there.
+  const bounds = new Map();
+  s.calls.forEach((c, i) => {
+    if (!bounds.has(c.n_items)) bounds.set(c.n_items, []);
+    bounds.get(c.n_items).push(i + 1);
+  });
+  const tl = el("div");
+  tl.appendChild(el("h3", null, `Item-Verlauf (${s.items.length} Items)`));
+  tl.appendChild(el("p", "note",
+    `Texte auf ${D.meta.preview_chars} Zeichen gekürzt. Entitäten sind im Export redigiert.`));
+  s.items.forEach((it, i) => {
+    const d = el("div", "item");
+    d.innerHTML = `<div class="kind">${esc(it.kind)}` +
+      (it.name ? ` <span class="tool">${esc(it.name)}</span>` : "") +
+      ` <span class="chars">${num(it.chars)} chars</span></div>` +
+      (it.text ? `<pre>${esc(it.text)}</pre>` : "");
+    tl.appendChild(d);
+    if (bounds.has(i + 1)) {
+      const ids = bounds.get(i + 1);
+      const toks = ids.map(n => num(s.calls[n - 1].est_tokens)).join(" / ");
+      tl.appendChild(el("div", "boundary",
+        `— Ende von Call ${ids.join(", ")} (${toks} est. Tokens) —`));
+    }
+  });
+  host.appendChild(tl);
+}
+
+/* ------------------------------------------------------------- cache view */
+function viewCache(host) {
+  const dg = D.diagnostics;
+  const prof = D.cache_profile;
+
+  const tiles = el("div", "tiles");
+  tiles.appendChild(tile("Call-Paare", num(dg.consecutive_pairs), "aufeinanderfolgend, gleiche Gruppe"));
+  tiles.appendChild(tile("mit geteiltem Prefix", num(dg.consecutive_pairs_with_shared_prefix),
+    dg.consecutive_pairs ? pf.format(dg.consecutive_pairs_with_shared_prefix / dg.consecutive_pairs) : "–"));
+  tiles.appendChild(tile("Gruppen mit >1 Modell", num(dg.mixed_model_trajectories),
+    "Prämisse: eigentlich 0"));
+  host.appendChild(tiles);
+
+  const shareTxt = dg.consecutive_pairs
+    ? dg.consecutive_pairs_with_shared_prefix / dg.consecutive_pairs : 0;
+  const verdict = shareTxt >= 0.8
+    ? `Hier greift das: ${num(dg.consecutive_pairs_with_shared_prefix)} von
+       ${num(dg.consecutive_pairs)} Call-Paaren teilen einen Prefix — die Rekonstruktion
+       trägt, die Cache-Zahlen sind auswertbar.`
+    : `Auf diesen Daten ist der Effekt kaum messbar: von ${num(dg.consecutive_pairs)}
+       Call-Paaren teilen nur ${num(dg.consecutive_pairs_with_shared_prefix)}
+       (${pf.format(shareTxt)}) überhaupt einen Prefix. Das ist ein Befund über die
+       Rekonstruktion, nicht über das Caching.`;
+  const expl = card("Warum ein Modellwechsel teuer ist", null, { span2: true });
+  expl.chart.innerHTML = `<p class="note" style="font-size:13px;color:var(--text-secondary)">
+    Provider cachen den geteilten Input-Prefix über die Calls einer Task. Wechselt das Modell,
+    fällt der Cache weg: der erste Call nach dem Wechsel zahlt den vollen Preis für den ganzen
+    Prefix. Der Export hat kein <code>usage.cached_tokens</code>, deshalb wird der gecachte
+    Anteil aus dem Item-Prefix-Overlap <em>geschätzt</em>.
+    <br><br>${verdict}</p>`;
+  host.appendChild(expl);
+
+  const grid = el("div", "grid wide");
+  if (prof.length) {
+    const maxN = Math.max(...prof.map(p => p.n));
+    const c = card("Geteilter Prefix nach Call-Position",
+      "Median, Band = p25–p75. n je Position steht am Punkt" +
+      (maxN < 30 ? " — bei diesem n trägt die Kurve keine Last." : "."), {
+      table: { cols: [
+        { label: "Position", num: true, get: r => r.pos },
+        { label: "n Paare", num: true, get: r => r.n },
+        { label: "p25", num: true, get: r => pf.format(r.p25) },
+        { label: "Median", num: true, get: r => pf.format(r.median) },
+        { label: "p75", num: true, get: r => pf.format(r.p75) }],
+        rows: prof } });
+    queue(c, (h, w) => lineChart(h, prof.map(p => ({
+      x: p.pos, y: p.median, label: "n=" + p.n,
+      tipTitle: "Call-Position " + p.pos,
+      tip: [`Median ${pf.format(p.median)} geteilt`,
+        `p25 ${pf.format(p.p25)} · p75 ${pf.format(p.p75)}`, `${p.n} Paare`] })), {
+      band: prof.map(p => ({ x: p.pos, lo: p.p25, hi: p.p75 })),
+      y0: 0, y1: 1, yFmt: v => pf.format(v), xFmt: v => nf.format(v),
+      xTicks: Math.max(1, prof.length - 1), xLabel: "Call-Position in der Gruppe", width: w }));
+    grid.appendChild(c);
+  }
+
+  // switch penalty for one sample
+  const sel = el("select");
+  MULTI_SAMPLES.forEach(t => {
+    const o = el("option", null, `${t.id} · ${t.n_calls} Calls · ${t.model}`);
+    o.value = t.id;
+    if (t.id === state.sampleId) o.selected = true;
+    sel.appendChild(o);
+  });
+  sel.onchange = () => { state.sampleId = sel.value; render(); };
+
+  const s = D.samples[state.sampleId];
+  const c2 = card("Kosten eines Wechsels an Call i",
+    "Ab Call i auf das billigere Geschwistermodell wechseln und dort bleiben.", {
+    table: s && s.cache ? { cols: [
+      { label: "Wechsel ab Call", num: true, get: r => r.switch_at + 1 },
+      { label: "est. Kosten", num: true, get: r => usd(r.cost_usd) },
+      { label: "Δ vs. logged", num: true, get: r => (r.delta_pct > 0 ? "+" : "") + nf1.format(r.delta_pct) + " %" }],
+      rows: s.cache.switches } : null });
+  c2.insertBefore(sel, c2.chart);
+  if (s && s.cache) {
+    const pts = s.cache.switches.map(r => ({
+      x: r.switch_at + 1, y: r.cost_usd,
+      tipTitle: "Wechsel ab Call " + (r.switch_at + 1),
+      tip: [usd(r.cost_usd), `${(r.delta_pct > 0 ? "+" : "") + nf1.format(r.delta_pct)} % vs. logged`,
+        "Ziel: " + s.cache.cheap_model] }));
+    const maxY = Math.max(s.cache.baseline_usd, ...pts.map(p => p.y));
+    queue(c2, (h, w) => lineChart(h, pts, {
+      y0: 0, y1: niceMax(maxY), yFmt: v => usd(v),
+      xFmt: v => nf.format(v), xTicks: Math.max(1, pts.length - 1),
+      xLabel: `Wechselpunkt · logged = ${usd(s.cache.baseline_usd)}`, width: w }));
+    cardNote(c2, el("p", "note",
+      `Basislinie (durchgehend geloggtes Modell): <strong>${usd(s.cache.baseline_usd)}</strong>. ` +
+      `Späterer Wechsel spart weniger — das ist der Cache-Reset plus der teurere Anfang.`));
+  } else {
+    c2.chart.appendChild(el("p", "empty", "Keine Mehr-Call-Trajektorie mit Detail-Daten."));
+  }
+  grid.appendChild(c2);
+  host.appendChild(grid);
+}
+
+/* ------------------------------------------------------------ frontier view */
+function viewFrontier(host) {
+  if (!D.frontier.length) {
+    host.appendChild(card("Keine Routing-Ergebnisse",
+      "results/routes.jsonl fehlt — erst <code>python scripts/baseline_router.py export/</code> " +
+      "laufen lassen, dann <code>python scripts/build_site_data.py export/</code>.",
+      { span2: true }));
+    return;
+  }
+  const rs = D.routes_summary;
+  const tiles = el("div", "tiles");
+  tiles.appendChild(tile("est. Kosten logged", usd(rs.cost_logged_usd), "alle Trajektorien"));
+  tiles.appendChild(tile("est. Kosten Baseline-Router", usd(rs.cost_routed_usd),
+    pf.format(rs.cost_routed_usd / rs.cost_logged_usd - 1) + " gegenüber logged"));
+  tiles.appendChild(tile("umgeroutete Trajektorien", num(rs.rerouted_trajectories),
+    "von " + num(rs.n_trajectories)));
+  host.appendChild(tiles);
+
+  const c = card("Kosten–Qualitäts-Frontier",
+    "Adoptionsgrad 0 → 100 %: der Router-Vorschlag wird zuerst für die billigsten " +
+    "Trajektorien übernommen. Qualität ist ein PLATZHALTER.", {
+    span2: true,
+    table: { cols: [
+      { label: "Adoption", num: true, get: r => pf.format(r.adopt_frac) },
+      { label: "est. Kosten", num: true, get: r => usd(r.cost_usd) },
+      { label: "Qualität (Platzhalter)", num: true, get: r => nf1.format(r.quality_placeholder * 100) + " %" }],
+      rows: D.frontier } });
+  const pts = D.frontier.map((f, i) => ({
+    x: f.cost_usd, y: f.quality_placeholder,
+    label: (i === 0 || i === D.frontier.length - 1) ? pf.format(f.adopt_frac) + " Adoption" : "",
+    tipTitle: pf.format(f.adopt_frac) + " Adoption",
+    tip: [usd(f.cost_usd), "Qualität (Platzhalter) " + pf.format(f.quality_placeholder)] }));
+  queue(c, (h, w) => lineChart(h, pts, {
+    y0: 0.6, y1: 1.0, yFmt: v => pf.format(v), xFmt: v => usd(v),
+    xLabel: "est. Kosten (USD, cache-aware, nur Input)", width: w, height: 260 }));
+  cardNote(c, el("p", "note",
+    "<strong>Bekannte Schwäche:</strong> Die y-Achse misst keine Qualität, sondern nur den Anteil " +
+    "Calls, die auf dem geloggten Modell bleiben. Sie fällt per Konstruktion, sobald umgeroutet " +
+    "wird. Bis ein echtes Outcome-Signal daran hängt, ist diese Kurve eine Kostenkurve mit " +
+    "einer Achse, die so tut als wäre sie Qualität."));
+  host.appendChild(c);
+
+
+  // cheapest vs most expensive trajectories
+  const withCost = D.trajectories.filter(t => t.cost_logged_usd != null);
+  const top = withCost.slice().sort((a, b) => b.cost_logged_usd - a.cost_logged_usd).slice(0, 12);
+  const totalCost = withCost.reduce((s, t) => s + t.cost_logged_usd, 0);
+  const c2 = card("Wo die Kosten sitzen", "Teuerste 12 Trajektorien, geloggte Route.", {
+    span2: true,
+    table: { cols: [
+      { label: "id", get: r => r.id },
+      { label: "Modell", get: r => r.model },
+      { label: "Calls", num: true, get: r => r.n_calls },
+      { label: "est. Kosten", num: true, get: r => usd(r.cost_logged_usd) },
+      { label: "Baseline-Route", num: true, get: r => usd(r.cost_routed_usd) }],
+      rows: top } });
+  queue(c2, (h, w) => hbarChart(h, top.map(t => ({
+    label: t.id + " · " + t.model, value: t.cost_logged_usd,
+    tip: [usd(t.cost_logged_usd) + " logged", usd(t.cost_routed_usd) + " Baseline-Route",
+      pf.format(t.cost_logged_usd / totalCost) + " der Gesamtkosten",
+      t.n_calls + " Call(s)"] })), { labelW: Math.min(280, w * 0.34), width: w, fmt: usd }));
+  host.appendChild(c2);
+}
+
+/* ------------------------------------------------------------------ shell */
+function render() {
+  renderFilters();
+  const host = document.getElementById("view");
+  host.innerHTML = "";
+  PENDING.length = 0;
+  hideTip();
+  ({ overview: viewOverview, browser: viewBrowser, cache: viewCache, frontier: viewFrontier }
+    [state.tab])(host);
+  flushDraws();   // cards are in the DOM now, so charts can measure their width
+}
+
+let resizeTimer = null;
+addEventListener("resize", () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(render, 150);
+});
+
+document.getElementById("caveats").innerHTML =
+  D.meta.caveats.map(c => `<li>${esc(c)}</li>`).join("") +
+  `<li>Enthält redigierte Auszüge des Challenge-Datensatzes — lokal halten, nicht veröffentlichen.</li>`;
+
+document.getElementById("headsub").textContent =
+  `${num(D.diagnostics.n_requests)} Requests · ${num(D.diagnostics.n_trajectories)} Gruppen · ` +
+  `${num(D.meta.est_tokens_total)} est. Input-Tokens · ` +
+  D.meta.chunks.map(c => c.name).join(", ");
+
+document.querySelectorAll("nav.tabs button").forEach(b => {
+  b.onclick = () => {
+    state.tab = b.dataset.tab;
+    document.querySelectorAll("nav.tabs button").forEach(x =>
+      x.setAttribute("aria-selected", x === b));
+    render();
+  };
+});
+
+const themeBtn = document.getElementById("themebtn");
+themeBtn.onclick = () => {
+  const cur = document.documentElement.getAttribute("data-theme");
+  const next = cur === "dark" ? "light" : cur === "light" ? "" : "dark";
+  document.documentElement.setAttribute("data-theme", next);
+  try { localStorage.setItem("viktor-theme", next); } catch (e) { /* private mode */ }
+};
+try {
+  const saved = localStorage.getItem("viktor-theme");
+  if (saved != null) document.documentElement.setAttribute("data-theme", saved);
+} catch (e) { /* private mode */ }
+
+render();
+})();
+</script>
+</body>
+</html>
