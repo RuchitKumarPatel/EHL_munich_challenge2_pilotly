@@ -1,0 +1,22 @@
+{
+  "source": "..\\viktor-tumai-starter\\viktor-tumai-starter\\export",
+  "files": [
+    "..\\viktor-tumai-starter\\viktor-tumai-starter\\export\\trajectories_v1_00.jsonl"
+  ],
+  "requests": 153,
+  "trajectories": 25,
+  "models": [
+    "claude-fable-5",
+    "claude-opus-4-8",
+    "claude-opus-5",
+    "claude-sonnet-5",
+    "gpt-5.6-luna",
+    "gpt-5.6-sol",
+    "gpt-5.6-terra"
+  ],
+  "partitions": {
+    "train": 18,
+    "validation": 4,
+    "test": 3
+  }
+}

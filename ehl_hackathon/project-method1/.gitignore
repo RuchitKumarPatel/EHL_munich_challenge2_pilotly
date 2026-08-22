@@ -1,0 +1,11 @@
+data/raw/
+data/interim/
+data/processed/
+models/router/
+models/quality/
+results/
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+

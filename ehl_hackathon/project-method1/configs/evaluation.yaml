@@ -1,0 +1,6 @@
+split_unit: trajectory
+confidence_level: 0.95
+propensity_floor: 0.05
+weight_clipping: true
+quality_label: composite_proxy
+

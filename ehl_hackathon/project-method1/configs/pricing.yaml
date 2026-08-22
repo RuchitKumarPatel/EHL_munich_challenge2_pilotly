@@ -1,0 +1,22 @@
+claude-fable-5:
+  input: 0.00000030
+  cached_input: 0.00000003
+claude-sonnet-5:
+  input: 0.00000300
+  cached_input: 0.00000030
+claude-opus-4-8:
+  input: 0.00001500
+  cached_input: 0.00000150
+claude-opus-5:
+  input: 0.00001500
+  cached_input: 0.00000150
+gpt-5.6-sol:
+  input: 0.00000030
+  cached_input: 0.00000003
+gpt-5.6-luna:
+  input: 0.00000100
+  cached_input: 0.00000010
+gpt-5.6-terra:
+  input: 0.00000200
+  cached_input: 0.00000020
+
