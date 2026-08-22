@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="980" height="620" viewBox="0 0 980 620">
+<rect width="100%" height="100%" fill="#fbfaf7"/>
+<text x="40.0" y="40.0" font-family="Arial, sans-serif" font-size="22" fill="#111827" text-anchor="start" font-weight="700">Cost-quality comparison: cache-aware cost vs continuation burden</text>
+<text x="40.0" y="64.0" font-family="Arial, sans-serif" font-size="13" fill="#4b5563" text-anchor="start" font-weight="400">Quality is proxied by burden delta; lower is better. Tokens and cache are estimated from traces.</text>
+<rect x="100" y="80" width="690" height="410" fill="#ffffff" stroke="#d1d5db"/>
+<line x1="100.0" y1="80" x2="100.0" y2="490" stroke="#eef2f7"/>
+<text x="100.0" y="518.0" font-family="Arial, sans-serif" font-size="12" fill="#4b5563" text-anchor="middle" font-weight="400">$54</text>
+<line x1="238.0" y1="80" x2="238.0" y2="490" stroke="#eef2f7"/>
+<text x="238.0" y="518.0" font-family="Arial, sans-serif" font-size="12" fill="#4b5563" text-anchor="middle" font-weight="400">$59</text>
+<line x1="376.0" y1="80" x2="376.0" y2="490" stroke="#eef2f7"/>
+<text x="376.0" y="518.0" font-family="Arial, sans-serif" font-size="12" fill="#4b5563" text-anchor="middle" font-weight="400">$65</text>
+<line x1="514.0" y1="80" x2="514.0" y2="490" stroke="#eef2f7"/>
+<text x="514.0" y="518.0" font-family="Arial, sans-serif" font-size="12" fill="#4b5563" text-anchor="middle" font-weight="400">$70</text>
+<line x1="652.0" y1="80" x2="652.0" y2="490" stroke="#eef2f7"/>
+<text x="652.0" y="518.0" font-family="Arial, sans-serif" font-size="12" fill="#4b5563" text-anchor="middle" font-weight="400">$76</text>
+<line x1="790.0" y1="80" x2="790.0" y2="490" stroke="#eef2f7"/>
+<text x="790.0" y="518.0" font-family="Arial, sans-serif" font-size="12" fill="#4b5563" text-anchor="middle" font-weight="400">$81</text>
+<line x1="100" y1="490.0" x2="790" y2="490.0" stroke="#eef2f7"/>
+<text x="88.0" y="494.0" font-family="Arial, sans-serif" font-size="12" fill="#4b5563" text-anchor="end" font-weight="400">-0.010</text>
+<line x1="100" y1="408.0" x2="790" y2="408.0" stroke="#eef2f7"/>
+<text x="88.0" y="412.0" font-family="Arial, sans-serif" font-size="12" fill="#4b5563" text-anchor="end" font-weight="400">-0.008</text>
+<line x1="100" y1="326.0" x2="790" y2="326.0" stroke="#eef2f7"/>
+<text x="88.0" y="330.0" font-family="Arial, sans-serif" font-size="12" fill="#4b5563" text-anchor="end" font-weight="400">-0.006</text>
+<line x1="100" y1="244.0" x2="790" y2="244.0" stroke="#eef2f7"/>
+<text x="88.0" y="248.0" font-family="Arial, sans-serif" font-size="12" fill="#4b5563" text-anchor="end" font-weight="400">-0.003</text>
+<line x1="100" y1="162.0" x2="790" y2="162.0" stroke="#eef2f7"/>
+<text x="88.0" y="166.0" font-family="Arial, sans-serif" font-size="12" fill="#4b5563" text-anchor="end" font-weight="400">-0.001</text>
+<line x1="100" y1="80.0" x2="790" y2="80.0" stroke="#eef2f7"/>
+<text x="88.0" y="84.0" font-family="Arial, sans-serif" font-size="12" fill="#4b5563" text-anchor="end" font-weight="400">+0.001</text>
+<circle cx="687.4" cy="117.6" r="8" fill="#111827"/>
+<text x="699.4" y="107.6" font-family="Arial, sans-serif" font-size="13" fill="#111827" text-anchor="start" font-weight="700">logged baseline</text>
+<polyline points="151.3,446.7 151.4,452.4 152.8,447.1 154.0,442.2 154.0,442.2 154.3,443.7 156.8,423.4 228.9,375.7" fill="none" stroke="#0f766e" stroke-width="2.5" opacity="0.8"/>
+<circle cx="151.3" cy="446.7" r="4" fill="#0f766e" stroke="#0f766e" stroke-width="2"/>
+<circle cx="151.4" cy="452.4" r="7" fill="#0f766e" stroke="#f59e0b" stroke-width="2"/>
+<circle cx="152.8" cy="447.1" r="4" fill="#0f766e" stroke="#0f766e" stroke-width="2"/>
+<circle cx="154.0" cy="442.2" r="4" fill="#0f766e" stroke="#0f766e" stroke-width="2"/>
+<circle cx="154.0" cy="442.2" r="4" fill="#0f766e" stroke="#0f766e" stroke-width="2"/>
+<circle cx="154.3" cy="443.7" r="4" fill="#0f766e" stroke="#0f766e" stroke-width="2"/>
+<circle cx="156.8" cy="423.4" r="4" fill="#0f766e" stroke="#0f766e" stroke-width="2"/>
+<circle cx="228.9" cy="375.7" r="4" fill="#0f766e" stroke="#0f766e" stroke-width="2"/>
+<text x="163.4" y="440.4" font-family="Arial, sans-serif" font-size="13" fill="#0f766e" text-anchor="start" font-weight="700">selected gated policy</text>
+<text x="445.0" y="560.0" font-family="Arial, sans-serif" font-size="14" fill="#111827" text-anchor="middle" font-weight="700">Estimated cache-aware cost, USD (lower is better)</text>
+<text x="28" y="285.0" font-family="Arial, sans-serif" font-size="14" fill="#111827" text-anchor="middle" font-weight="700" transform="rotate(-90 28 285.0)">Continuation burden delta (lower is better)</text>
+<rect x="805" y="100" width="145" height="130" rx="10" fill="#ffffff" stroke="#d1d5db"/>
+<circle cx="815" cy="130" r="5" fill="#111827"/>
+<text x="829.0" y="134.0" font-family="Arial, sans-serif" font-size="12" fill="#374151" text-anchor="start" font-weight="400">logged baseline</text>
+<circle cx="815" cy="158" r="5" fill="#0f766e"/>
+<text x="829.0" y="162.0" font-family="Arial, sans-serif" font-size="12" fill="#374151" text-anchor="start" font-weight="400">gated safe policy</text>
+<text x="815.0" y="310.0" font-family="Arial, sans-serif" font-size="13" fill="#111827" text-anchor="start" font-weight="700">Selected cost: $56.04</text>
+<text x="815.0" y="332.0" font-family="Arial, sans-serif" font-size="13" fill="#111827" text-anchor="start" font-weight="400">Savings: 27.15%</text>
+<text x="815.0" y="354.0" font-family="Arial, sans-serif" font-size="13" fill="#111827" text-anchor="start" font-weight="400">Burden delta: -0.0089</text>
+<text x="815.0" y="376.0" font-family="Arial, sans-serif" font-size="13" fill="#111827" text-anchor="start" font-weight="400">Agreement: 68.61%</text>
+</svg>

@@ -1,0 +1,4 @@
+policy,cost_usd,cost_delta_pct,burden_delta,changed_trajectories,switch_penalty_usd
+original_logged,76.928856,0.0,0.0,0,0.0
+gated_router_lambda_0.20,56.04425,-27.1479,-0.0089,340,0.0
+cache_segment_router_switch_penalty_2000_tokens,55.790474,-27.4778,-0.0089,315,0.0485

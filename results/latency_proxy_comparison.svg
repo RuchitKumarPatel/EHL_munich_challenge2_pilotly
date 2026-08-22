@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="430" viewBox="0 0 720 430">
+<rect width="100%" height="100%" fill="#fbfaf7"/>
+<text x="38.0" y="42.0" font-family="Arial, sans-serif" font-size="22" fill="#111827" text-anchor="start" font-weight="700">Estimated latency proxy comparison</text>
+<text x="38.0" y="66.0" font-family="Arial, sans-serif" font-size="13" fill="#4b5563" text-anchor="start" font-weight="400">Proxy = uncached input tokens + 0.2 × cached prefix tokens. This is not wall-clock latency.</text>
+<rect x="90" y="90" width="500" height="230" fill="#ffffff" stroke="#d1d5db"/>
+<line x1="90" y1="320.0" x2="590" y2="320.0" stroke="#eef2f7"/>
+<text x="80.0" y="324.0" font-family="Arial, sans-serif" font-size="12" fill="#4b5563" text-anchor="end" font-weight="400">0.0M</text>
+<line x1="90" y1="262.5" x2="590" y2="262.5" stroke="#eef2f7"/>
+<text x="80.0" y="266.5" font-family="Arial, sans-serif" font-size="12" fill="#4b5563" text-anchor="end" font-weight="400">6.4M</text>
+<line x1="90" y1="205.0" x2="590" y2="205.0" stroke="#eef2f7"/>
+<text x="80.0" y="209.0" font-family="Arial, sans-serif" font-size="12" fill="#4b5563" text-anchor="end" font-weight="400">12.7M</text>
+<line x1="90" y1="147.5" x2="590" y2="147.5" stroke="#eef2f7"/>
+<text x="80.0" y="151.5" font-family="Arial, sans-serif" font-size="12" fill="#4b5563" text-anchor="end" font-weight="400">19.1M</text>
+<line x1="90" y1="90.0" x2="590" y2="90.0" stroke="#eef2f7"/>
+<text x="80.0" y="94.0" font-family="Arial, sans-serif" font-size="12" fill="#4b5563" text-anchor="end" font-weight="400">25.4M</text>
+<rect x="200" y="114.6" width="120" height="205.4" fill="#111827" rx="6"/>
+<text x="260.0" y="348.0" font-family="Arial, sans-serif" font-size="13" fill="#111827" text-anchor="middle" font-weight="700">logged baseline</text>
+<text x="260.0" y="104.6" font-family="Arial, sans-serif" font-size="13" fill="#111827" text-anchor="middle" font-weight="400">22.71M</text>
+<rect x="410" y="115.0" width="120" height="205.0" fill="#0f766e" rx="6"/>
+<text x="470.0" y="348.0" font-family="Arial, sans-serif" font-size="13" fill="#111827" text-anchor="middle" font-weight="700">selected gated</text>
+<text x="470.0" y="105.0" font-family="Arial, sans-serif" font-size="13" fill="#111827" text-anchor="middle" font-weight="400">22.67M</text>
+<text x="38.0" y="375.0" font-family="Arial, sans-serif" font-size="14" fill="#111827" text-anchor="start" font-weight="700">Selected policy changes this proxy by -0.17%.</text>
+<text x="38.0" y="398.0" font-family="Arial, sans-serif" font-size="13" fill="#4b5563" text-anchor="start" font-weight="400">Interpretation: expected speed is roughly unchanged; the real benefit is cost reduction.</text>
+</svg>

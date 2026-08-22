@@ -1,0 +1,16 @@
+{
+  "_notes": {
+    "source": "Official public pricing pages checked 2026-08-22. Anthropic Claude Platform pricing: Claude Fable 5, Opus 5/4.8/4.6, Sonnet 5/4.6. ChatGPT pricing page is subscription/access pricing, not per-token API pricing, so GPT token rates keep the OpenAI API/platform rate-card assumption.",
+    "caveat": "Challenge model IDs are anonymized. Claude mappings use exact family/version names where possible. GPT mappings use API-style per-token rates because the provided ChatGPT consumer pricing page does not publish token prices.",
+    "units": "USD per 1M estimated tokens: [uncached_input, cached_input, output]. Output prices are retained for documentation but the repo cost model currently excludes output cost."
+  },
+  "claude-fable": [10.0, 1.0, 50.0],
+  "claude-opus": [5.0, 0.5, 25.0],
+  "claude-sonnet-5": [2.0, 0.2, 10.0],
+  "claude-sonnet-4-6": [3.0, 0.3, 15.0],
+  "claude-sonnet": [2.0, 0.2, 10.0],
+  "gpt-5.6-sol": [2.5, 0.25, 15.0],
+  "gpt-5.6-terra": [1.25, 0.125, 7.5],
+  "gpt-5.6-luna": [0.5, 0.05, 3.0],
+  "_default": [3.0, 0.3, 15.0]
+}

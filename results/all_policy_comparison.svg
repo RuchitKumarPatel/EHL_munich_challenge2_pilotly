@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1060" height="500" viewBox="0 0 1060 500">
+<rect width="100%" height="100%" fill="#fbfaf7"/>
+<text x="36.0" y="42.0" font-family="Arial, sans-serif" font-size="22" fill="#111827" text-anchor="start" font-weight="700">All-policy comparison</text>
+<text x="36.0" y="66.0" font-family="Arial, sans-serif" font-size="13" fill="#4b5563" text-anchor="start" font-weight="400">Classifier is cross-fitted and used only as proposal; cache segment optimizer remains the final guard.</text>
+<rect x="90" y="100" width="690" height="260" fill="#ffffff" stroke="#d1d5db"/>
+<line x1="90" y1="360.0" x2="780" y2="360.0" stroke="#eef2f7"/>
+<text x="80.0" y="364.0" font-family="Arial, sans-serif" font-size="12" fill="#4b5563" text-anchor="end" font-weight="400">$0</text>
+<line x1="90" y1="295.0" x2="780" y2="295.0" stroke="#eef2f7"/>
+<text x="80.0" y="299.0" font-family="Arial, sans-serif" font-size="12" fill="#4b5563" text-anchor="end" font-weight="400">$22</text>
+<line x1="90" y1="230.0" x2="780" y2="230.0" stroke="#eef2f7"/>
+<text x="80.0" y="234.0" font-family="Arial, sans-serif" font-size="12" fill="#4b5563" text-anchor="end" font-weight="400">$43</text>
+<line x1="90" y1="165.0" x2="780" y2="165.0" stroke="#eef2f7"/>
+<text x="80.0" y="169.0" font-family="Arial, sans-serif" font-size="12" fill="#4b5563" text-anchor="end" font-weight="400">$65</text>
+<line x1="90" y1="100.0" x2="780" y2="100.0" stroke="#eef2f7"/>
+<text x="80.0" y="104.0" font-family="Arial, sans-serif" font-size="12" fill="#4b5563" text-anchor="end" font-weight="400">$86</text>
+<rect x="150" y="127.9" width="105" height="232.1" fill="#111827" rx="6"/>
+<text x="202.5" y="115.9" font-family="Arial, sans-serif" font-size="14" fill="#111827" text-anchor="middle" font-weight="700">$76.93</text>
+<text x="202.5" y="384.0" font-family="Arial, sans-serif" font-size="11" fill="#111827" text-anchor="middle" font-weight="700">Original logged</text>
+<rect x="305" y="190.9" width="105" height="169.1" fill="#2563eb" rx="6"/>
+<text x="357.5" y="178.9" font-family="Arial, sans-serif" font-size="14" fill="#111827" text-anchor="middle" font-weight="700">$56.04</text>
+<text x="357.5" y="384.0" font-family="Arial, sans-serif" font-size="11" fill="#111827" text-anchor="middle" font-weight="700">Gated router λ=0.20</text>
+<rect x="460" y="191.6" width="105" height="168.4" fill="#0f766e" rx="6"/>
+<text x="512.5" y="179.6" font-family="Arial, sans-serif" font-size="14" fill="#111827" text-anchor="middle" font-weight="700">$55.79</text>
+<text x="512.5" y="384.0" font-family="Arial, sans-serif" font-size="11" fill="#111827" text-anchor="middle" font-weight="700">Cache segment router</text>
+<rect x="615" y="193.6" width="105" height="166.4" fill="#ea580c" rx="6"/>
+<text x="667.5" y="181.6" font-family="Arial, sans-serif" font-size="14" fill="#111827" text-anchor="middle" font-weight="700">$55.16</text>
+<text x="667.5" y="384.0" font-family="Arial, sans-serif" font-size="11" fill="#111827" text-anchor="middle" font-weight="700">Classifier + cache segment</text>
+<text x="815.0" y="110.0" font-family="Arial, sans-serif" font-size="15" fill="#111827" text-anchor="start" font-weight="700">Best offline cost</text>
+<text x="815.0" y="138.0" font-family="Arial, sans-serif" font-size="14" fill="#111827" text-anchor="start" font-weight="400">Classifier + cache segment</text>
+<text x="815.0" y="166.0" font-family="Arial, sans-serif" font-size="14" fill="#111827" text-anchor="start" font-weight="400">Cost: $55.16</text>
+<text x="815.0" y="194.0" font-family="Arial, sans-serif" font-size="14" fill="#111827" text-anchor="start" font-weight="400">Cost delta: -28.30%</text>
+<text x="815.0" y="222.0" font-family="Arial, sans-serif" font-size="14" fill="#111827" text-anchor="start" font-weight="400">Burden delta: -0.0070</text>
+<text x="815.0" y="250.0" font-family="Arial, sans-serif" font-size="14" fill="#111827" text-anchor="start" font-weight="400">Switch penalty: $0.0840</text>
+<text x="36.0" y="450.0" font-family="Arial, sans-serif" font-size="13" fill="#374151" text-anchor="start" font-weight="400">Interpretation: the classifier improves estimated cost only when the cache-aware segment guard is retained; the raw classifier route is not the recommended policy.</text>
+</svg>

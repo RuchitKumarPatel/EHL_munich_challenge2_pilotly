@@ -1,0 +1,5 @@
+policy,display_name,cost_usd,cost_delta_pct,burden_delta,changed_trajectories,switch_penalty_usd,classifier_label_match_pct
+original_logged,Original logged,76.928856,0.0,0.0,0,0.0,
+gated_router_lambda_0.20,Gated router λ=0.20,56.04425,-27.1479,-0.0089,340,0.0,
+cache_segment_switch_penalty_2000_tokens,Cache segment router,55.790474,-27.4778,-0.0089,315,0.0485,
+classifier_cache_segment_switch_penalty_2000_tokens,Classifier + cache segment,55.155439,-28.3033,-0.00703,377,0.084,48.67

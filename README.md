@@ -1,51 +1,122 @@
-# Viktor Challenge Starter — Build the Router
+# Viktor Challenge Router
 
-Starter kit for the **Viktor Challenge** at the TUM.ai hackathon (Munich, 22–23 Aug 2026).
-From real LLM-request logs, build a router that picks the right model for every call —
-then prove it works, even though the log shows only the model that ran, and no outputs or token counts.
+This repo contains our router and offline evaluation for the Viktor / TUM.ai agent-routing challenge.
 
-## Quick start (5 minutes)
+The main result is a **cache-aware segment router with an explicit switch penalty**. It uses a gated trajectory-level router to propose a cheaper model, then decides per call whether switching is still worth it after accounting for prefix-cache loss.
 
-```bash
-# 1. No dataset yet? Generate a synthetic sample with the same shape:
-python scripts/make_synthetic_sample.py            # writes ./export/
+## Headline Result
 
-# 2. Got the real dataset links (shipped at kickoff)? Then instead: the export ships
-#    as trajectories_v1_<index>.jsonl.tar.gz archives — download, verify the posted
-#    SHA-256, then:  mkdir -p export && tar xzf trajectories_v1_01.jsonl.tar.gz -C export/
+On the reconstructed export currently in `export/`:
 
-# 3. Sanity-check the export, reconstruct trajectories, print stats:
-python scripts/load_trajectories.py export/
+| Policy | Estimated Cost | Cost Delta | Burden Delta | Changed Trajectories |
+|---|---:|---:|---:|---:|
+| Original logged routing | `$76.93` | `0.00%` | `0.0000` | `0` |
+| Gated router `lambda=0.20` | `$56.04` | `-27.15%` | `-0.0089` | `340` |
+| Cache-aware segment router | `$55.79` | `-27.48%` | `-0.0089` | `315` |
+| Classifier + cache segment | `$55.16` | `-28.30%` | `-0.0070` | `377` |
 
-# 4. Run the baseline heuristic router + cache-aware cost report:
-python scripts/baseline_router.py export/
+Presentation claim:
 
-# 5. Turn results into a cost–quality frontier CSV (+ PNG if matplotlib is installed):
-python scripts/plot_frontier.py results/routes.jsonl
+> Cache-aware segment routing reduces estimated cost by **27.5%** while keeping the continuation-burden proxy non-worse.
+
+The classifier experiment gives a slightly lower offline cost, but it is less defensible as the main policy because it learns proxy labels from the gated router and matches those labels only `48.67%` of the time. Use it as an extension, not the headline claim.
+
+## Policy Summary
+
+The final recommended policy is:
+
+```text
+1. Reconstruct trajectories from the JSONL export.
+2. Look only at the first request of each trajectory.
+3. Extract initial features:
+   prompt/template words, task type, token bucket, tool signature,
+   complex-tool bucket, image flag, and logged model family.
+4. Use cross-fitted neighbor estimates to propose a cheaper same-family model.
+5. Apply quality guards:
+   burden mean must be non-worse,
+   burden UCB must be non-worse,
+   expected cost must improve.
+6. Run a cache-aware segment optimizer:
+   for each call, keep the logged model or use the proposed model.
+7. Charge a 2,000-token switch penalty whenever the segment route changes model.
+8. Switch only when cache-aware savings survive that penalty.
 ```
 
-Python 3.10+, standard library only (matplotlib optional for the PNG).
+Why this matters: provider prefix caching couples calls inside a trajectory. A route that looks cheap per call can become expensive if it switches models and loses cached-prefix value.
 
-## Using a coding agent
+## Reproduce
 
-Point Claude Code / Codex / Cursor / opencode at this repo — `AGENTS.md` briefs your agent.
-In Claude Code you also get slash commands:
+Use Python 3.10+; the main pipeline uses only the standard library.
 
-- `/setup` — set up everything needed to participate
-- `/make-presentation` — build a Viktor-branded presentation of your solution
-- `/prepare-submission` — package your solution into a formal submission
+```bash
+# 1. Sanity-check and reconstruct trajectories
+python3 scripts/load_trajectories.py export/
 
-## What's here
+# 2. Generate gated trajectory-level proposals
+python3 scripts/template_bandit_router.py export \
+  --selection-mode gated-score \
+  --same-family \
+  --min-similarity 0.30 \
+  --lambdas 0,0.05,0.1,0.2,0.35,0.5,0.8,1.2 \
+  --output-prefix current_gated_sim030
+
+# 3. Export lambda=0.20 trajectory/call details
+python3 scripts/export_gated_trajectories.py export \
+  --routes results/current_gated_sim030_routes.jsonl \
+  --lambda-value 0.2 \
+  --out-prefix results/current_gated_sim030_lambda02
+
+# 4. Apply cache-aware segment router with switch penalty
+python3 scripts/cache_segment_router.py export \
+  --routes results/current_gated_sim030_routes.jsonl \
+  --lambda-value 0.2 \
+  --switch-penalty-tokens 2000 \
+  --out-prefix results/cache_segment_router
+
+# 5. Optional: classifier proposal experiment
+python3 scripts/classifier_router.py export \
+  --routes results/current_gated_sim030_routes.jsonl \
+  --lambda-value 0.2 \
+  --switch-penalty-tokens 2000 \
+  --out-prefix results/classifier_router
+
+# 6. Generate presentation charts
+python3 scripts/plot_policy_comparison.py
+```
+
+## Important Outputs
+
+| Path | Purpose |
+|---|---|
+| `results/three_way_policy_comparison.svg` | Original vs gated vs cache-segment recommendation |
+| `results/all_policy_comparison.svg` | Adds classifier experiment to the comparison |
+| `results/cache_segment_router_aggregate.csv` | Main aggregate result for recommended policy |
+| `results/cache_segment_router_summary.csv` | Trajectory-level segment-routing results |
+| `results/cache_segment_router_calls.csv` | Call-level cache/switch/cost details |
+| `results/classifier_router_aggregate.csv` | Optional classifier experiment aggregate |
+| `scripts/pricing.json` | Pricing assumptions used by the cost model |
+
+## Evaluation Notes
+
+- There is no `usage` field in the export, so token counts are estimates.
+- Output cost is not included because final outputs are missing and output token counts are not logged.
+- Prefix-cache reuse is inferred from item-level shared prefixes.
+- A model switch resets cache in the cost model.
+- Quality is not directly observed. We use a **continuation-burden proxy** based on later calls, tool-error text, and wait/timeout signals.
+- All router quality estimates are cross-fitted to avoid evaluating a trajectory on its own neighborhood.
+
+## Files
 
 | Path | What |
 |---|---|
-| `AGENTS.md` | Agent briefing: dataset shape, the cache trap, judging, starter ideas |
-| `skills/` | The three guided workflows above (plain Markdown, readable by humans too) |
-| `scripts/` | Loader + trajectory reconstruction, baseline router, cache-aware cost model (estimated tokens), frontier plot, synthetic sample |
-| `templates/presentation.html` | Self-contained branded slide template |
+| `scripts/load_trajectories.py` | Reconstructs trajectories from JSONL requests |
+| `scripts/cost_model.py` | Cache-aware cost model using estimated tokens |
+| `scripts/template_bandit_router.py` | First-request neighbor/gated router |
+| `scripts/export_gated_trajectories.py` | Exports trajectory and call-level details |
+| `scripts/cache_segment_router.py` | Recommended cache-aware segment router |
+| `scripts/classifier_router.py` | Optional cross-fitted classifier proposal experiment |
+| `scripts/plot_policy_comparison.py` | Generates SVG/CSV comparison charts |
 
-## Rules that matter
+## Dataset Rule
 
-- **License:** challenge use only — no redistribution of the dataset. Full terms ship with the download.
-- No GPU or API keys needed. Judge-model rescoring is allowed (credits announced at kickoff).
-- Questions → the challenge Discord; the Viktor team answers there all weekend.
+The dataset is challenge-use only. Do not upload or redistribute the export files.

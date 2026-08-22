@@ -1,0 +1,4 @@
+policy,cost_usd,cost_delta_pct,burden_delta,changed_trajectories,switch_penalty_usd,classifier_label_match_pct
+original_logged,76.928856,0.0,0.0,0,0.0,
+classifier_sticky_route,66.84219,-13.1117,-0.01104,565,0.0,48.67
+classifier_cache_segment_switch_penalty_2000_tokens,55.155439,-28.3033,-0.00703,377,0.084,48.67
