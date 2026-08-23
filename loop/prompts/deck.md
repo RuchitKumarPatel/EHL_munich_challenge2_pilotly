@@ -67,6 +67,7 @@ careful read of the markup plus a headless render is enough.
 ```bash
 git add presentation.html
 git commit -m "deck: rebuild slides from current claims (turn N)"
+.venv/bin/python -m unittest tests.test_data_safety   # this push path is NOT gated; run it
 git push origin main
 ```
 

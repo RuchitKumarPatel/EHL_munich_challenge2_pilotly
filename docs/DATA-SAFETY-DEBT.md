@@ -24,6 +24,12 @@ redaction placeholder serials.
 
 **Why it matters.** `AGENTS.md`: challenge use only, no redistribution. A push is redistribution.
 
+**Working tree, turn 7.** The paragraph was rewritten on `text-classifier-finetune` to describe the
+shape of both problems instead of quoting either -- no identifier and no serial survives in the file.
+`tests.test_data_safety` passes on that branch. This closes the *tree*, not the *history*: commit
+`24e7469` is still on `origin` and still carries the original paragraph, so item 1 stays open here
+until `i0006` is executed by a human.
+
 ### 2. Loop bookkeeping — placeholder serials
 
 **Where.** Commit `5082319` on `main`, which introduced them; removed again in `8257642`. Both
@@ -58,9 +64,24 @@ record, in this file.
 
 ## What already stops a recurrence
 
-- `loop/run.sh::push_all_branches` runs `tests/test_data_safety.py` and pushes **nothing** when it
-  is red. Nothing leaves the machine past a red suite.
+- `loop/push_gate.sh::push_all_branches` — sourced by both `loop/run.sh` and `loop/bootstrap.sh`,
+  which no longer push on their own — scans the working tree once and then scans **each branch
+  against its own tree** (`DATA_SAFETY_SCAN_REF`) before pushing that branch. A branch that fails
+  is skipped and named; the clean ones still go. Until ADR-011 this said "nothing leaves the
+  machine past a red suite", which was false three ways: the scan read whatever was checked out
+  while every branch was pushed, `bootstrap.sh` had no gate at all, and the two paths below were
+  never covered.
+- **Not covered, on the record.** (a) `refs/entire/checkpoints/*` — exempt by name, pushed by the
+  `entire` CLI itself; see `i0007` and the 36 refs already on `origin`. (b) The hand-written
+  `git push` in `loop/prompts/merge.md` and `loop/prompts/deck.md`; those prompts are told to run
+  the suite first, which is an instruction to a model rather than a gate.
 - `loop/prompts/_common.md` hard rule 2: no export content in any tracked file, and `grep -c` any
   concrete-looking token against `export/` before writing it down — counts only.
-- Backlog `i0005` closes the gap that let the raw ids through: the suite matches placeholder
-  *shapes* by regex, and nothing currently catches a raw vendor id.
+- Both detector gaps that let this through are now closed (ADR-010, backlog `i0005` and
+  `i0011`). `RepoCarriesNoOpaqueExportToken` catches a raw vendor id by asking the export whether
+  it knows the token, so it needs no shape; and the concrete-placeholder pattern now accepts any
+  attached separator, not only a trailing `_<digits>`, which is what the shorthand on line 3 of
+  `loop/JOURNAL.md` exploited. Both were confirmed against a seeded leak, and both report a
+  masked shape rather than the value.
+- Neither closes the *history* half of this file. The commits listed above still carry what they
+  carry; a detector added today does not reach them.

@@ -16,7 +16,7 @@ RESULTS := results
 
 .PHONY: all recon labels jobkey features costs model policy gates strata ope \
         family figs report console console-check console-e2e test demo clean help dirs \
-        tooling
+        tooling verify
 
 ## all: run the full pipeline in dependency order
 #
@@ -77,6 +77,15 @@ policy: dirs
 ## gates: publication gate — six negative controls (reads routes.jsonl)
 gates: dirs
 	$(PY) -m router.gates
+
+## verify: prose gate — every numeral in a user-facing artifact against claims.json
+#
+# NOT part of `all`. `all` rebuilds the claims table, and a deck half-way
+# through an edit would wedge the pipeline for the wrong reason. The contract is
+# enforced by tests/test_verify.py instead, so `make test` is the gate and this
+# target is the readable report of what bound to what.
+verify: dirs
+	$(PY) -m router.verify
 
 # ------------------------------------------------------------- stage 4: evidence
 ## strata: stratum table + support deficit       -> estimates.json["strata"]

@@ -53,6 +53,17 @@ plus `results/feature_manifest.json`:
 `results/estimates.json`, `results/metrics.json`, `results/claims.json`: free-form dicts, but
 every number quoted anywhere must exist in `claims.json` under a stable key.
 
+That contract is enforced in two places, and between them they cover everything a reader sees:
+
+* `results/NUMBERS.md` at GENERATION time — every numeral in it is interpolated through
+  `router/report.py`'s `_Q.__call__`, which raises `KeyError` on a key that is not in
+  `claims.json`. Nothing rescans it afterwards because nothing can get into it unkeyed.
+* the git-tracked user-facing artifacts at CHECK time — `python -m router.verify` reads
+  `README.md`, `router/console.html`, `presentation.html`, `templates/presentation.html` and
+  `site/index.html`, pulls every numeral out of their prose, and exits 1 on any that no claim
+  stands behind (0 clean, 2 when `claims.json` has not been built). See ADR-009 for what it can
+  and cannot prove.
+
 ---
 
 ## VERIFIED ACCEPTANCE NUMBERS (these are ground truth — your module must reproduce them)
