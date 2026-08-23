@@ -256,3 +256,77 @@ class EverySupervisorPushPathUsesTheGate(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class OpaqueTokenScanIsRefAware(unittest.TestCase):
+    """The opaque-token detector must read the ref's blobs, not the working tree.
+
+    WHY THIS CLASS EXISTS
+        `RepoCarriesNoOpaqueExportToken` and the SCAN_REF plumbing were built on
+        two different branches and first met when those branches were integrated.
+        The enumerator was ref-aware (`_repo_files` shells out to `git ls-tree`
+        under SCAN_REF); the reader was not (`_candidates` opened the path in the
+        working tree). Under SCAN_REF the two disagree, and they disagree
+        SILENTLY: a path that exists in the ref but not in the working tree is
+        dropped by an `os.path.isfile` guard, and a path that exists in both is
+        read at the WRONG content. Scanning a branch would therefore have
+        examined `main`'s files and reported the branch clean.
+
+    WHAT IS TESTED
+        Both directions of the read path, using an invented token rather than a
+        real one -- the bug is that the wrong bytes are read, which needs no leak
+        to demonstrate. The probe is deliberately NOT in the export, so this file
+        stays clean under the very detector it is testing.
+    """
+
+    #: 16+ chars of mixed case and digits, so OPAQUE_RE matches it. Invented:
+    #: assembled at runtime and never written as one literal, for the same
+    #: reason PROBE_PLACEHOLDER is.
+    PROBE_TOKEN = "ZZ" + "PROBEOPAQUE" + "4" + "TOKEN" + "9"
+
+    @classmethod
+    def setUpClass(cls):
+        if not _have_git():
+            raise unittest.SkipTest("git is unavailable")
+        from tests import test_data_safety
+        if not os.path.isdir(test_data_safety.EXPORT):
+            raise unittest.SkipTest("export/ is not present")
+        cls.mod = test_data_safety
+
+    def _candidates_under(self, ref):
+        """token -> files, as the detector sees them with SCAN_REF set to `ref`."""
+        mod = self.mod
+        klass = mod.RepoCarriesNoOpaqueExportToken
+        previous = mod.SCAN_REF
+        mod.SCAN_REF = ref
+        try:
+            paths = mod.RepoCarriesNoPresignedSignature._repo_files()
+            self.assertIsNotNone(paths, "the ref's tree should enumerate")
+            return klass._candidates(paths, klass._exempt_arm_ids())
+        finally:
+            mod.SCAN_REF = previous
+
+    def test_a_token_only_in_the_ref_is_extracted(self):
+        sha = RepoScanIsRefAware._dangling_dirty_commit(
+            "docs/SCRATCH-OPAQUE-PROBE.md",
+            "A probe file. Opaque token: %s\n" % self.PROBE_TOKEN)
+        found = self._candidates_under(sha)
+        self.assertIn(
+            self.PROBE_TOKEN, found,
+            "the detector enumerated the ref's tree but read the working tree, so "
+            "a file that exists only in the ref contributed nothing. Under the push "
+            "gate this reports every branch as clean.")
+        self.assertIn("docs/SCRATCH-OPAQUE-PROBE.md", found[self.PROBE_TOKEN])
+
+    def test_the_working_tree_does_not_carry_the_probe(self):
+        # Negative control. Without it, the assertion above would also pass if
+        # the probe were somehow present in the checkout.
+        found = self._candidates_under("")
+        self.assertNotIn(self.PROBE_TOKEN, found,
+                         "the probe must exist only inside the dangling commit")
+
+    def test_the_probe_is_not_in_the_export(self):
+        # This file is itself scanned by RepoCarriesNoOpaqueExportToken. The
+        # probe is safe to write literally only because the export never saw it.
+        klass = self.mod.RepoCarriesNoOpaqueExportToken
+        self.assertEqual(klass._which_occur_in_export({self.PROBE_TOKEN}), set())

@@ -541,15 +541,18 @@ class RepoCarriesNoOpaqueExportToken(unittest.TestCase):
 
     @classmethod
     def _candidates(cls, paths, exempt):
-        """token -> the repo files carrying it."""
+        """token -> the repo files carrying it.
+
+        Reads through `_repo_blob`, so that under DATA_SAFETY_SCAN_REF this
+        reads the REF's blobs. Opening the working-tree path instead would
+        silently skip any file the ref has and the checkout does not, and would
+        read the wrong bytes for every file they share -- which is the whole
+        point of scanning a branch you are not standing on.
+        """
         out = {}
         for rel in paths:
-            path = os.path.join(REPO_ROOT, rel)
-            if not os.path.isfile(path) or os.path.getsize(path) > cls.MAX_FILE:
-                continue
-            try:
-                blob = _text(path)
-            except OSError:
+            blob = _repo_blob(rel, cls.MAX_FILE)
+            if blob is None:
                 continue
             for token in cls._opaque(blob) - exempt:
                 out.setdefault(token, set()).add(rel)
