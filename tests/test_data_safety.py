@@ -71,6 +71,18 @@ EXPORT = os.environ.get("DATA_SAFETY_EXPORT_DIR") or os.path.join(REPO_ROOT, "ex
 #: working-tree concerns and neither directory is tracked.
 SCAN_REF = os.environ.get("DATA_SAFETY_SCAN_REF", "").strip()
 
+#: The ref goes onto a git command line, so it is validated before it gets there.
+#: `git ls-tree -r --name-only -z $SCAN_REF` and `git cat-file -s $SCAN_REF:$path`
+#: had no separator of any kind. An option-shaped value makes both exit 129, the
+#: enumeration returns nothing, every content check raises SkipTest, and the
+#: module exits 0 having read no files -- which the push gate reads as "clean".
+#: Refusing at import instead means such a value is RED, loudly, before any scan
+#: is attributed to it. See backlog i0023 and i0022.
+if SCAN_REF and (SCAN_REF.startswith("-") or any(c.isspace() for c in SCAN_REF)):
+    raise ValueError(
+        "DATA_SAFETY_SCAN_REF is option-shaped or contains whitespace; refusing "
+        "to scan rather than reporting a tree nobody enumerated as clean")
+
 #: STRICT means "the push gate is asking". A detector that cannot run is then a
 #: RED answer, never a skipped one.
 #:
@@ -157,7 +169,8 @@ def _repo_blob(rel, max_bytes):
     """
     if SCAN_REF:
         spec = "%s:%s" % (SCAN_REF, rel)
-        size = subprocess.run(["git", "cat-file", "-s", spec], cwd=REPO_ROOT,
+        size = subprocess.run(["git", "cat-file", "-s", "--end-of-options", spec],
+                              cwd=REPO_ROOT,
                               capture_output=True)
         if size.returncode != 0:
             return None            # a submodule, a symlink target, or a gone path
@@ -166,7 +179,8 @@ def _repo_blob(rel, max_bytes):
                 return None
         except ValueError:
             return None
-        blob = subprocess.run(["git", "cat-file", "blob", spec], cwd=REPO_ROOT,
+        blob = subprocess.run(["git", "cat-file", "blob", "--end-of-options", spec],
+                              cwd=REPO_ROOT,
                               capture_output=True)
         if blob.returncode != 0:
             return None
