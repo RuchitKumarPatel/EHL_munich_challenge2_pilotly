@@ -128,13 +128,17 @@
     "title": "Supervisor budget check interpolates state.json into a python -c source string",
     "kind": "code",
     "why": "loop/run.sh:193 builds \"import sys;sys.exit(0 if float('$spent') >= ...)\" where $spent is the raw printed cost_usd field out of loop/state/state.json. That file is written by every turn's bypassPermissions agent, so a non-numeric value becomes executable Python in the supervisor -- which runs outside any tool-permission boundary and re-evaluates it via stop_reason() at the top of every loop iteration. Found by the turn-4 security review.",
-    "status": "accepted",
-    "branch": null,
+    "status": "implemented",
+    "branch": "idea/supervisor-untrusted-state",
     "created_turn": 4,
     "notes": [
       {
         "turn": 4,
         "text": "SECURITY. Fix: pass values as argv, not source text -- \"$PY\" -c 'import sys;sys.exit(0 if float(sys.argv[1]) >= float(sys.argv[2]) else 1)' \"$spent\" \"$LOOP_BUDGET_USD\". Harden state_field, usage_pct, is_rate_limited and the COST extractor the same way as defence in depth. Success = a test that writes a payload string into state.json's cost_usd, runs stop_reason, and asserts the payload did not execute and the loop stopped cleanly."
+      },
+      {
+        "turn": 6,
+        "text": "Fixed on idea/supervisor-untrusted-state (dbd8647). The exploit is real and was measured, not argued: tests/test_supervisor_input.py runs one probe payload down both paths -- through the OLD interpolated form it executes and writes its sentinel, through stop_reason as it now stands the sentinel is absent and the loop stops with 'unreadable cost_usd'. 4 of the file's 9 tests failed before the fix, 9 pass after; make test 91 OK (was 82), make all green, router.gates GREEN 4 pass / 2 warn / 0 fail. Converted all five readers, not just the reachable one: state_field, usage_pct, quota_reset_epoch, is_rate_limited and the per-turn COST extractor. TWO THINGS FOUND WHILE FIXING IT, both now covered. (1) The max-turns guard was switchable off by writing a non-integer turn counter -- [ $turn -ge 40 ] is a shell error on one, and an erroring guard reads as 'do not stop'; new state_int coerces it. (2) The budget check is three-valued now (over / under / unreadable) and fails closed on the third, which is the one a merely corrupt state file reaches by accident. The durable guard is textual: no python -c argument in run.sh may be double-quoted, and none may continue past its closing quote. run.sh also gained a LOOP_RUN_SOURCED guard so the helpers can be sourced without starting a night."
       }
     ]
   },
