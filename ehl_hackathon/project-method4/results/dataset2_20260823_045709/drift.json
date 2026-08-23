@@ -1,0 +1,104 @@
+{
+  "random": {
+    "n_test": 159,
+    "eras_in_test": [
+      "cost_push_2026h1",
+      "explore_2025h2",
+      "heuristic_2025h1"
+    ],
+    "method3_cascade": {
+      "cost": 0.00096946626,
+      "quality": 0.8108356615134711,
+      "quality_ci": [
+        0.8047200049491318,
+        0.8178959169401802
+      ],
+      "geometric_quality": 0.8096843346701577,
+      "by_era": {
+        "segment::cost_push_2026h1": 0.7973127213608787,
+        "segment::explore_2025h2": 0.8158263666952739,
+        "segment::heuristic_2025h1": 0.8162396661228568,
+        "arithmetic_across_segments": 0.8097929180596698,
+        "geometric_across_segments": 0.8097445659240065,
+        "variance_penalty": 4.8352135663343176e-05
+      },
+      "reachable_fraction": 0.5
+    },
+    "method4_foraging": {
+      "cost": 0.00088807033,
+      "quality": 0.8169415514688607,
+      "quality_ci": [
+        0.8098158160342003,
+        0.8249608080121071
+      ],
+      "geometric_quality": 0.815686011763375,
+      "by_era": {
+        "segment::cost_push_2026h1": 0.810393979876883,
+        "segment::explore_2025h2": 0.8233662574368198,
+        "segment::heuristic_2025h1": 0.814528060647246,
+        "arithmetic_across_segments": 0.8160960993203163,
+        "geometric_across_segments": 0.8160781948255031,
+        "variance_penalty": 1.7904494813203442e-05
+      },
+      "reachable_fraction": 1.0
+    }
+  },
+  "temporal": {
+    "n_test": 152,
+    "eras_in_test": [
+      "cost_push_2026h1",
+      "explore_2025h2",
+      "heuristic_2025h1"
+    ],
+    "method3_cascade": {
+      "cost": 0.00142120478,
+      "quality": 0.8063870773658686,
+      "quality_ci": [
+        0.800893522658299,
+        0.8119896800189408
+      ],
+      "geometric_quality": 0.8055918370236016,
+      "by_era": {
+        "segment::cost_push_2026h1": 0.8125900810463201,
+        "segment::explore_2025h2": 0.799769962371377,
+        "segment::heuristic_2025h1": 0.8154436305141416,
+        "arithmetic_across_segments": 0.8092678913106129,
+        "geometric_across_segments": 0.8092390846310052,
+        "variance_penalty": 2.8806679607695784e-05
+      },
+      "reachable_fraction": 0.4583333333333333
+    },
+    "method4_foraging": {
+      "cost": 0.0013810421500000001,
+      "quality": 0.8041220888427137,
+      "quality_ci": [
+        0.7924969351901446,
+        0.8130537608567486
+      ],
+      "geometric_quality": 0.7984591065047911,
+      "by_era": {
+        "segment::cost_push_2026h1": 0.7964018449885603,
+        "segment::explore_2025h2": 0.8073664093915449,
+        "segment::heuristic_2025h1": 0.8066194971814075,
+        "arithmetic_across_segments": 0.8034625838538375,
+        "geometric_across_segments": 0.8034469685121934,
+        "variance_penalty": 1.5615341644070746e-05
+      },
+      "reachable_fraction": 1.0
+    }
+  },
+  "drift_summary": {
+    "method3_cascade": {
+      "random_quality": 0.8108356615134711,
+      "temporal_quality": 0.8063870773658686,
+      "drift_gap": 0.004448584147602519,
+      "retained_fraction": 0.9945135810389752
+    },
+    "method4_foraging": {
+      "random_quality": 0.8169415514688607,
+      "temporal_quality": 0.8041220888427137,
+      "drift_gap": 0.012819462626146971,
+      "retained_fraction": 0.984307980658962
+    }
+  }
+}

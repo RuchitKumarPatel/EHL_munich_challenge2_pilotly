@@ -1,0 +1,113 @@
+{
+  "n_test": 159,
+  "guessed_prices": [],
+  "config": {
+    "temperature": 0.05,
+    "exploration_floor": 0.05,
+    "risk_aversion": 0.15,
+    "minimum_support": 3.0,
+    "threshold_weight": 0.35,
+    "sample_seed": 20260823,
+    "label_budget": 40
+  },
+  "metrics": [
+    {
+      "policy": "logged",
+      "trajectories": 159,
+      "calls": 919,
+      "cost": 0.00275577733,
+      "quality": 0.8212889120528181,
+      "quality_ci": [
+        0.7998899283465092,
+        0.845308607292736
+      ],
+      "geometric_quality": 0.8052050251781631,
+      "factual_coverage": 1.0
+    },
+    {
+      "policy": "cheapest",
+      "trajectories": 159,
+      "calls": 919,
+      "cost": 0.00011069517,
+      "quality": 0.7527832178668048,
+      "quality_ci": [
+        0.7395924356282979,
+        0.7653757514486844
+      ],
+      "geometric_quality": 0.747101113571698,
+      "factual_coverage": 0.08176100628930817
+    },
+    {
+      "policy": "strongest",
+      "trajectories": 159,
+      "calls": 919,
+      "cost": 0.0055347585000000005,
+      "quality": 0.8484338235587934,
+      "quality_ci": [
+        0.8414343914641434,
+        0.8542708711112263
+      ],
+      "geometric_quality": 0.847441224825324,
+      "factual_coverage": 0.1761006289308176
+    },
+    {
+      "policy": "method3_cascade",
+      "trajectories": 159,
+      "calls": 919,
+      "cost": 0.00096946626,
+      "quality": 0.8108356615134711,
+      "quality_ci": [
+        0.8047200049491318,
+        0.8178959169401802
+      ],
+      "geometric_quality": 0.8096843346701577,
+      "factual_coverage": 0.08176100628930817
+    },
+    {
+      "policy": "method4_foraging",
+      "trajectories": 159,
+      "calls": 919,
+      "cost": 0.00088807033,
+      "quality": 0.8169415514688607,
+      "quality_ci": [
+        0.8098158160342003,
+        0.8249608080121071
+      ],
+      "geometric_quality": 0.815686011763375,
+      "factual_coverage": 0.06918238993710692
+    }
+  ],
+  "sustainability": {
+    "logged": {
+      "reachable_fraction": 0.6180555555555556,
+      "n_unreachable_cells": 63,
+      "stochastic": false
+    },
+    "cheapest": {
+      "reachable_fraction": 0.125,
+      "n_unreachable_cells": 126,
+      "stochastic": false
+    },
+    "strongest": {
+      "reachable_fraction": 0.125,
+      "n_unreachable_cells": 126,
+      "stochastic": false
+    },
+    "method3_cascade": {
+      "reachable_fraction": 0.2777777777777778,
+      "n_unreachable_cells": 104,
+      "stochastic": false
+    },
+    "method4_foraging": {
+      "reachable_fraction": 1.0,
+      "n_unreachable_cells": 0,
+      "stochastic": true
+    }
+  },
+  "frontier": [
+    "cheapest",
+    "method4_foraging",
+    "logged",
+    "strongest"
+  ]
+}

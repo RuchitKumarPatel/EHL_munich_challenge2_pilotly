@@ -1,0 +1,284 @@
+{
+  "logged_cost": 0.0018506783600000002,
+  "selected": {
+    "risk_aversion": 0.05,
+    "temperature": 0.05,
+    "exploration_floor": 0.05,
+    "geometric_quality": 0.8205374004429669,
+    "arithmetic_quality": 0.8223229391605793,
+    "cost": 0.0008360230300000001,
+    "within_logged_budget": true
+  },
+  "grid": [
+    {
+      "risk_aversion": 0.0,
+      "temperature": 0.05,
+      "exploration_floor": 0.05,
+      "geometric_quality": 0.8205090481390538,
+      "arithmetic_quality": 0.8223028972462193,
+      "cost": 0.0008424012100000001,
+      "within_logged_budget": true
+    },
+    {
+      "risk_aversion": 0.0,
+      "temperature": 0.05,
+      "exploration_floor": 0.08,
+      "geometric_quality": 0.818175513841936,
+      "arithmetic_quality": 0.8200728496366604,
+      "cost": 0.0008622155000000001,
+      "within_logged_budget": true
+    },
+    {
+      "risk_aversion": 0.0,
+      "temperature": 0.15,
+      "exploration_floor": 0.05,
+      "geometric_quality": 0.811071264668645,
+      "arithmetic_quality": 0.8131325428281488,
+      "cost": 0.0008007881700000001,
+      "within_logged_budget": true
+    },
+    {
+      "risk_aversion": 0.0,
+      "temperature": 0.15,
+      "exploration_floor": 0.08,
+      "geometric_quality": 0.8102063003356463,
+      "arithmetic_quality": 0.8122599462627993,
+      "cost": 0.00084597499,
+      "within_logged_budget": true
+    },
+    {
+      "risk_aversion": 0.0,
+      "temperature": 0.35,
+      "exploration_floor": 0.05,
+      "geometric_quality": 0.7949260726062107,
+      "arithmetic_quality": 0.7974278783720614,
+      "cost": 0.00063024179,
+      "within_logged_budget": true
+    },
+    {
+      "risk_aversion": 0.0,
+      "temperature": 0.35,
+      "exploration_floor": 0.08,
+      "geometric_quality": 0.7966580844546911,
+      "arithmetic_quality": 0.7994596281075497,
+      "cost": 0.00063262857,
+      "within_logged_budget": true
+    },
+    {
+      "risk_aversion": 0.05,
+      "temperature": 0.05,
+      "exploration_floor": 0.05,
+      "geometric_quality": 0.8205374004429669,
+      "arithmetic_quality": 0.8223229391605793,
+      "cost": 0.0008360230300000001,
+      "within_logged_budget": true
+    },
+    {
+      "risk_aversion": 0.05,
+      "temperature": 0.05,
+      "exploration_floor": 0.08,
+      "geometric_quality": 0.8160958025084135,
+      "arithmetic_quality": 0.8185593118994178,
+      "cost": 0.0008608006100000001,
+      "within_logged_budget": true
+    },
+    {
+      "risk_aversion": 0.05,
+      "temperature": 0.15,
+      "exploration_floor": 0.05,
+      "geometric_quality": 0.8136994829218985,
+      "arithmetic_quality": 0.8158270748416981,
+      "cost": 0.0007907610700000001,
+      "within_logged_budget": true
+    },
+    {
+      "risk_aversion": 0.05,
+      "temperature": 0.15,
+      "exploration_floor": 0.08,
+      "geometric_quality": 0.8126111685966968,
+      "arithmetic_quality": 0.814735191573025,
+      "cost": 0.00082819914,
+      "within_logged_budget": true
+    },
+    {
+      "risk_aversion": 0.05,
+      "temperature": 0.35,
+      "exploration_floor": 0.05,
+      "geometric_quality": 0.7946114914265067,
+      "arithmetic_quality": 0.7972365305879276,
+      "cost": 0.0005885860100000001,
+      "within_logged_budget": true
+    },
+    {
+      "risk_aversion": 0.05,
+      "temperature": 0.35,
+      "exploration_floor": 0.08,
+      "geometric_quality": 0.7940967120388758,
+      "arithmetic_quality": 0.7967803791259891,
+      "cost": 0.0005766185,
+      "within_logged_budget": true
+    },
+    {
+      "risk_aversion": 0.15,
+      "temperature": 0.05,
+      "exploration_floor": 0.05,
+      "geometric_quality": 0.8193509897941101,
+      "arithmetic_quality": 0.8218995876860815,
+      "cost": 0.0007831477700000001,
+      "within_logged_budget": true
+    },
+    {
+      "risk_aversion": 0.15,
+      "temperature": 0.05,
+      "exploration_floor": 0.08,
+      "geometric_quality": 0.8178811018751302,
+      "arithmetic_quality": 0.8204330645286125,
+      "cost": 0.0008122449700000001,
+      "within_logged_budget": true
+    },
+    {
+      "risk_aversion": 0.15,
+      "temperature": 0.15,
+      "exploration_floor": 0.05,
+      "geometric_quality": 0.8101110320085502,
+      "arithmetic_quality": 0.8122499071875271,
+      "cost": 0.0007342308700000001,
+      "within_logged_budget": true
+    },
+    {
+      "risk_aversion": 0.15,
+      "temperature": 0.15,
+      "exploration_floor": 0.08,
+      "geometric_quality": 0.8072457609623485,
+      "arithmetic_quality": 0.8098501734339166,
+      "cost": 0.00070301792,
+      "within_logged_budget": true
+    },
+    {
+      "risk_aversion": 0.15,
+      "temperature": 0.35,
+      "exploration_floor": 0.05,
+      "geometric_quality": 0.7916700414664323,
+      "arithmetic_quality": 0.7946015624832933,
+      "cost": 0.00055525797,
+      "within_logged_budget": true
+    },
+    {
+      "risk_aversion": 0.15,
+      "temperature": 0.35,
+      "exploration_floor": 0.08,
+      "geometric_quality": 0.792200983563291,
+      "arithmetic_quality": 0.7950928119160112,
+      "cost": 0.00062316504,
+      "within_logged_budget": true
+    },
+    {
+      "risk_aversion": 0.4,
+      "temperature": 0.05,
+      "exploration_floor": 0.05,
+      "geometric_quality": 0.7919394504170586,
+      "arithmetic_quality": 0.7969078466402869,
+      "cost": 0.00046763123000000004,
+      "within_logged_budget": true
+    },
+    {
+      "risk_aversion": 0.4,
+      "temperature": 0.05,
+      "exploration_floor": 0.08,
+      "geometric_quality": 0.7908708204607144,
+      "arithmetic_quality": 0.7958159559822506,
+      "cost": 0.0005386432300000001,
+      "within_logged_budget": true
+    },
+    {
+      "risk_aversion": 0.4,
+      "temperature": 0.15,
+      "exploration_floor": 0.05,
+      "geometric_quality": 0.7899621778040844,
+      "arithmetic_quality": 0.7943217966209482,
+      "cost": 0.00044129440000000003,
+      "within_logged_budget": true
+    },
+    {
+      "risk_aversion": 0.4,
+      "temperature": 0.15,
+      "exploration_floor": 0.08,
+      "geometric_quality": 0.7865219401220205,
+      "arithmetic_quality": 0.7907735962998768,
+      "cost": 0.00044004294,
+      "within_logged_budget": true
+    },
+    {
+      "risk_aversion": 0.4,
+      "temperature": 0.35,
+      "exploration_floor": 0.05,
+      "geometric_quality": 0.7838015971431226,
+      "arithmetic_quality": 0.7897668262183521,
+      "cost": 0.00047964494000000003,
+      "within_logged_budget": true
+    },
+    {
+      "risk_aversion": 0.4,
+      "temperature": 0.35,
+      "exploration_floor": 0.08,
+      "geometric_quality": 0.7837406656358377,
+      "arithmetic_quality": 0.7896970347437482,
+      "cost": 0.0005586349400000001,
+      "within_logged_budget": true
+    },
+    {
+      "risk_aversion": 1.0,
+      "temperature": 0.05,
+      "exploration_floor": 0.05,
+      "geometric_quality": 0.7582138496596049,
+      "arithmetic_quality": 0.7627814095213487,
+      "cost": 0.00015144302,
+      "within_logged_budget": true
+    },
+    {
+      "risk_aversion": 1.0,
+      "temperature": 0.05,
+      "exploration_floor": 0.08,
+      "geometric_quality": 0.7556215142135091,
+      "arithmetic_quality": 0.7600751134756616,
+      "cost": 0.00012004338999999999,
+      "within_logged_budget": true
+    },
+    {
+      "risk_aversion": 1.0,
+      "temperature": 0.15,
+      "exploration_floor": 0.05,
+      "geometric_quality": 0.7447461114701426,
+      "arithmetic_quality": 0.7540190978316854,
+      "cost": 0.00011483047999999999,
+      "within_logged_budget": true
+    },
+    {
+      "risk_aversion": 1.0,
+      "temperature": 0.15,
+      "exploration_floor": 0.08,
+      "geometric_quality": 0.746688702791058,
+      "arithmetic_quality": 0.7560652246195334,
+      "cost": 0.00017441262,
+      "within_logged_budget": true
+    },
+    {
+      "risk_aversion": 1.0,
+      "temperature": 0.35,
+      "exploration_floor": 0.05,
+      "geometric_quality": 0.7438910579089172,
+      "arithmetic_quality": 0.754494699225666,
+      "cost": 0.00022805443,
+      "within_logged_budget": true
+    },
+    {
+      "risk_aversion": 1.0,
+      "temperature": 0.35,
+      "exploration_floor": 0.08,
+      "geometric_quality": 0.7439190159568991,
+      "arithmetic_quality": 0.7545040230614073,
+      "cost": 0.00026291731,
+      "within_logged_budget": true
+    }
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "temperature": 0.05,
+  "exploration_floor": 0.05,
+  "risk_aversion": 0.15,
+  "minimum_support": 3.0,
+  "threshold_weight": 0.35,
+  "sample_seed": 20260823,
+  "label_budget": 40
+}
