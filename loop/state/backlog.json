@@ -86,6 +86,10 @@
       {
         "turn": 6,
         "text": "Implemented on idea/data-safety-detectors (3bfe5f1). New RepoCarriesNoOpaqueExportToken: extracts every maximal 16-64 character [A-Za-z0-9_-] run mixing letters and digits from all 114 tracked and untracked-not-ignored files, then streams the 101 MB export once and fails on any token the export contains. MEASURED: 23 candidates, 0 hits. Two design points measured rather than guessed -- (a) base64 data URIs must be stripped first, or the inlined 577 KB PNG in presentation.html alone contributes ~9000 fragments of exactly this shape; (b) exactly one raw candidate does occur in the export and it is an arm identifier, so the 9 ids in router.pricing.OBSERVED_ARMS are exempt STRUCTURALLY, tracking the arm table rather than being an allowlist that can grow. Two controls: a token lifted out of the export at runtime IS found by the scanner (so the scan is not vacuous), and that same token seeded into an untracked scratch file made the test fail. Failure output prints the repo path and a MASKED shape (letters -> a/A, digits -> #), never the token. Runtime +3 s. Gate: make test 92 OK, make all green, router.gates GREEN. ADR-010."
+      },
+      {
+        "turn": 7,
+        "text": "INTEGRATION FOUND A REAL DEFECT THAT NEITHER BRANCH COULD SEE. i0009's SCAN_REF plumbing made RepoCarriesNoPresignedSignature._repo_files() enumerate a ref's tree via git ls-tree. i0005's RepoCarriesNoOpaqueExportToken reuses that enumerator but read each path back out of the WORKING TREE. Under SCAN_REF the two disagree silently: a path the ref has and the checkout does not is dropped by an os.path.isfile guard, and a shared path is read at the wrong content -- so loop/push_gate.sh, which already invokes the whole module per ref, was running the opaque detector against main's files and pronouncing every branch clean. Fixed on idea/integrate-turn7 by reading through _repo_blob, the accessor the sibling placeholder check already used. Test first: tests/test_push_gate.py::OpaqueTokenScanIsRefAware builds a dangling commit carrying an invented opaque token, asserts it IS found under SCAN_REF and is NOT found without it, and asserts the probe has zero occurrences in the export. Watched it fail before the fix."
       }
     ]
   },
@@ -158,6 +162,10 @@
       {
         "turn": 6,
         "text": "Implemented on idea/push-gate-per-ref (1fd25ac). New loop/push_gate.sh is the single push gate; run.sh and bootstrap.sh source it and neither contains a git push of its own. It scans the working tree once, then scans EACH branch against its own tree via the new DATA_SAFETY_SCAN_REF env var (tests/test_data_safety.py enumerates git ls-tree and reads blobs with git cat-file instead of the filesystem) before pushing that branch; a failing branch is skipped and named, the clean ones still go. MEASURED, not asserted: run against this repo's five real branches, the per-ref scan is RED on text-classifier-finetune -- the exact branch docs/DATA-SAFETY-DEBT.md records as carrying raw ids, and the exact branch the old gate pushed unscanned whenever main was checked out -- and names docs/POSTMORTEM-textclf.md; main, idea/router-verify, idea/data-safety-detectors and frontend-console are green. The success criterion from the turn-4 note is met behaviourally in tests/test_push_gate.py::PushGateRefusesOnlyTheDirtyBranch: a throwaway repo with a real local remote and three branches, one seeded with a marker -- asserts on what actually LANDED on the remote, not on what the function printed. Mutating the per-ref check to a no-op kills 3 of its 4 tests. Ref-awareness itself is tested both directions against this repo, the dirty ref built with git commit-tree and left DANGLING so no push path can ever see it. make test 93 OK (was 82), make all green, router.gates GREEN 4/2/0. ADR-011. NOT FIXED and deliberately so: i0016 (stale remote-tracking refs make the skip-if-same check wrong for branches other than main) is untouched and still proposed -- it is a different bug in the same loop."
+      },
+      {
+        "turn": 7,
+        "text": "INTEGRATION FOUND A REAL DEFECT THAT NEITHER BRANCH COULD SEE. i0009's SCAN_REF plumbing made RepoCarriesNoPresignedSignature._repo_files() enumerate a ref's tree via git ls-tree. i0005's RepoCarriesNoOpaqueExportToken reuses that enumerator but read each path back out of the WORKING TREE. Under SCAN_REF the two disagree silently: a path the ref has and the checkout does not is dropped by an os.path.isfile guard, and a shared path is read at the wrong content -- so loop/push_gate.sh, which already invokes the whole module per ref, was running the opaque detector against main's files and pronouncing every branch clean. Fixed on idea/integrate-turn7 by reading through _repo_blob, the accessor the sibling placeholder check already used. Test first: tests/test_push_gate.py::OpaqueTokenScanIsRefAware builds a dangling commit carrying an invented opaque token, asserts it IS found under SCAN_REF and is NOT found without it, and asserts the probe has zero occurrences in the export. Watched it fail before the fix."
       }
     ]
   },
@@ -271,5 +279,20 @@
     "branch": null,
     "created_turn": 4,
     "notes": []
+  },
+  {
+    "id": "i0017",
+    "title": "Integrate the six parallel turn-6/turn-7 branches into one merge candidate",
+    "kind": "infra",
+    "why": "Six branches (text-classifier-finetune, idea/router-verify, idea/data-safety-detectors, idea/push-gate-per-ref, idea/supervisor-untrusted-state, idea/plan-turn-cadence) each carried an implemented idea, and each appended to docs/DECISIONS.md, docs/IDEAS.md and loop/JOURNAL.md. Two of them modified tests/test_data_safety.py independently and two modified loop/run.sh independently. The merge turn would have faced six conflicted merges on defense night. Success = one branch that contains all six with make test, make all and router.gates green.",
+    "status": "implemented",
+    "branch": "idea/integrate-turn7",
+    "created_turn": 7,
+    "notes": [
+      {
+        "turn": 7,
+        "text": "All six branches merged onto idea/integrate-turn7, in this order: text-classifier-finetune, idea/router-verify, idea/data-safety-detectors, idea/push-gate-per-ref, idea/supervisor-untrusted-state, idea/plan-turn-cadence. Each was verified green in isolation first (make test + router.gates on every one). Result: make test 140 OK (main is 82), make all green (301 claims), router.gates GREEN 4 pass / 2 warn / 0 fail, and router.verify PASS on 41 numerals across 5 artifacts. ADR numbering needed no renumbering -- the parallel sessions had already coordinated 008..013. Conflicts were confined to docs/DECISIONS.md, docs/IDEAS.md, loop/JOURNAL.md and loop/state/state.json, all resolved as unions; loop/state/backlog.json auto-merged correctly and was NOT hand-edited. tests/test_data_safety.py and loop/run.sh both auto-merged textually despite two independent authors each -- run.sh passes bash -n and its tests, test_data_safety.py did NOT (see the note on i0005/i0009). THE MERGE TURN SHOULD MERGE THIS BRANCH, not the six."
+      }
+    ]
   }
 ]
