@@ -248,6 +248,149 @@
       {
         "turn": 7,
         "text": "MERGE THIS ONE, NOT THE SIX. main's copy of the backlog is stale: i0001, i0004, i0005, i0008, i0009, i0010, i0011, i0012 and i0013 were all built by parallel turn-6/7 sessions and flagged implemented on their own branches, so main still shows them accepted with branch null and the merge turn would find nothing to merge. idea/integrate-turn7 contains all six branches. Verified on the integration branch: make test 140 OK (main is 82), make all green (301 claims), router.gates GREEN 4 pass / 2 warn / 0 fail, router.verify PASS on 41 numerals across 5 artifacts, and tests.test_data_safety green under DATA_SAFETY_SCAN_REF pointed at the branch itself. When loop/state/backlog.json conflicts on this merge, take the BRANCH side -- it already carries the correct implemented/branch flags for all nine plus this entry."
+      },
+      {
+        "turn": 8,
+        "text": "TURN-8 REVIEW, read before merging. Independently re-verified on the branch: make test 140 OK, router.gates GREEN 4 pass / 2 warn / 0 fail, router.verify PASS on 41 numerals across 5 artifacts, and router/textclf is fully isolated -- nothing outside that directory references it, so make all and make test never import transformers, which is i0004's acceptance criterion met. STILL MERGE IT: every finding below is either pre-existing on main or a gap in a control the branch ADDS, so the branch is strictly better than main on all of them. Open against it, in priority order: i0022 (the per-ref scan fails open -- any git error reports a branch clean, proven), i0018 (the opaque-token detector's 16-char floor misses the 11-char ids it was written for, proven), i0019 (router.verify PASSes on a missing artifact, proven), i0026 (loop/README.md contradicts the branch's own i0005 fix), i0024 and i0025. i0023 is pre-existing on main -- do not let it block. Merge, then fix i0022 and i0018 first; they are the two that make a green gate mean less than it reads."
+      }
+    ]
+  },
+  {
+    "id": "i0018",
+    "title": "The new opaque-token detector cannot catch the incident it was written for",
+    "kind": "code",
+    "why": "tests/test_data_safety.py:512 on idea/integrate-turn7. RepoCarriesNoOpaqueExportToken.OPAQUE_RE requires a token of 16-64 chars, but the three raw identifiers whose removal the class docstring cites (commit af4e78b, docs/POSTMORTEM-textclf.md section 5) are each 11 chars. Measured this turn: all five tokens removed by af4e78b occur in the export (1, 2, 7, 7025 and 9828 occurrences); zero of the five match OPAQUE_RE. The class is green and detects nothing of its stated class. Found by the turn-8 review turn re-running the detector against the diff that motivated it.",
+    "status": "accepted",
+    "branch": null,
+    "created_turn": 8,
+    "notes": [
+      {
+        "turn": 8,
+        "text": "DATA-SAFETY. Not a judgement call: a green detector that cannot detect its own stated class defeats a control. Fix: lower OPAQUE_RE's floor from 16 to 8 characters and keep the mixed-letters-and-digits requirement. MEASURED COST OF DOING SO, so the implement turn does not have to re-derive it: repo-wide candidate tokens go 27 (floor 16) -> 59 (12) -> 63 (11) -> 73 (10) -> 93 (8). The export scan is one streamed pass over the 101 MB file regardless of set size, so runtime is unchanged at ~3 s; the 16-char floor buys nothing. Expect the lower floor to surface benign candidates (arm ids are already exempted via router.pricing.OBSERVED_ARMS; the tracked session-uuid scratch paths in router/textclf/ are the other likely hit -- see i0020). Success = a test that takes the af4e78b^ version of docs/POSTMORTEM-textclf.md as a fixture, extracts its tokens and asserts the detector flags them, plus make test still green. Do NOT write any of those tokens into a tracked file: read them out of git history at test time, or synthesise same-shape tokens and assert on shape. Keep the masked-output-only rule on failure."
+      }
+    ]
+  },
+  {
+    "id": "i0019",
+    "title": "router.verify reports PASS when a user-facing artifact is missing",
+    "kind": "code",
+    "why": "router/verify.py:151 on idea/integrate-turn7. Report.ok is 'not self.orphans' and ignores Report.missing, so an artifact listed in ARTIFACTS that is absent from the tree is printed as 'absent from this tree, skipped' and the run still exits 0 with a PASS line. Reproduced this turn: deleting README.md and presentation.html from a scratch copy of the branch yields 'PASS - 5 numeral(s) across 3 artifact(s)', exit 0. presentation.html is the judged deck, it carries 36 of the 41 bound numerals, and it was created at the repo root only at turn 5 -- any rename or relocation by a later deck turn silently disables the prose gate for the whole deck. Found by the turn-8 review turn.",
+    "status": "accepted",
+    "branch": null,
+    "created_turn": 8,
+    "notes": [
+      {
+        "turn": 8,
+        "text": "Defeats a control rather than being a style opinion -- same class as i0012, so it skips evaluate. Fix: make Report.ok require an empty missing list as well, i.e. 'not self.orphans and not self.missing', and print the missing artifacts in the FAIL block rather than as a quiet aside. If an artifact is legitimately optional it must say so explicitly: add a fourth field to the ARTIFACTS tuples (required True/False) rather than letting absence pass silently. templates/presentation.html is the only plausible optional one. Success = tests/test_verify.py gains a case that copies the tree, removes presentation.html, and asserts main() returns non-zero naming the missing path; existing 140 tests stay green."
+      }
+    ]
+  },
+  {
+    "id": "i0020",
+    "title": "router/textclf hardcodes a dead /tmp session-uuid scratch path in all four modules",
+    "kind": "code",
+    "why": "router/textclf/{encode,probe,evalpool,finetune}.py each set SP to an absolute /tmp/claude-1000/<session-uuid>/scratchpad path from the session that produced the negative result. That directory is gone, so the postmortem's measurements cannot be reproduced by anyone reading it -- which is most of the value of landing a negative result on main. Also loads emb_modernbert_L1024.npy from there. Found by the turn-8 review turn.",
+    "status": "proposed",
+    "branch": null,
+    "created_turn": 8,
+    "notes": [
+      {
+        "turn": 8,
+        "text": "Turn-8 review: also flagged by the code-review skill and the python-reviewer. router/textclf/probe.py does 'from evalpool import *' and resolves it against that dead /tmp path, so the README's documented reproduce command works only while that directory happens to survive. If i0018 lowers the opaque-token floor to 8 characters, the session uuid in these paths becomes a candidate -- it is not export content (verified: it is a Claude Code session id), so either fix the paths or let the detector's export check clear it."
+      }
+    ]
+  },
+  {
+    "id": "i0021",
+    "title": "The deck's headline +4.59 pp is a difference of two upper bounds, and the comparison it frames is decided by reroute volume",
+    "kind": "evaluation",
+    "why": "presentation.html:65 and :72 on main. Slide 6's largest type is '+4.59 pp - the gap, in the wrong direction'; slide 5 concludes 'the routing logic has not earned its complexity'. Two independent defects, both verified this turn. (1) router/ope.py:594 declares '-> Tuple[None, None, float, dict]' and returns (None, None, hi, diag): non_inferiority_bound yields a ONE-SIDED UPPER bound only, and both frontier legs are built from it. 4.59 = upper(router) - upper(mixture), which bounds the true difference in neither direction, so no directional conclusion follows from it. (2) The identified delta is sum(W * 1[switched] * (m - y)) with m,y in [0,1] and spend weights summing to 1, so |delta| <= the switched spend share = 0.035888 = 3.5888 pp -- while the hull at matched spend is -3.8322 pp. The gated router cannot reach the hull by arithmetic no matter how well it routes; the slide measures that it moves 3.6% of spend, not that its rule is bad. Found by the turn-8 review turn via estimator-critic and confirmed by hand against claims.json and router/ope.py.",
+    "status": "accepted",
+    "branch": null,
+    "created_turn": 8,
+    "notes": [
+      {
+        "turn": 8,
+        "text": "HIGHEST PRIORITY OF THIS REVIEW and it skips evaluate: this is not a judgement call about emphasis, it is a number presented as a bound that is not one, on the slide that carries the argument. Judging criterion 1 is exactly 'a number that does not trace' and criterion 3 is presentation clarity; a judge who asks 'in which direction does 4.59 bound the gap?' currently gets no defensible answer. FIX, in this order. (a) Stop printing 4.59 as 'the gap'. Either drop it or rename the claims key to what it is -- a difference of two one-sided upper bounds -- and say so in the caption. (b) Say the arithmetic ceiling out loud, because it is the honest and much stronger statement: the router moves 3.6% of spend (ope.routed.switched.spend_share = 0.035888, 119 of 675 routable), which caps its spend-weighted friction delta below the 3.83 pp the hull sits at, so no router at this tau could pass this test. That reframes the negative result from 'our rule is bad' to 'we chose tau too conservatively to have earned a frontier comparison', which is both true and more defensible. (c) The closing line 'At equal spend, one cheap arm beats our router' is wrong twice: the comparator at that spend is a RANDOMISATION, not a single arm, and ~40% of its weight sits on claude-opus-5, the most expensive arm on the chart. Restate it. (d) If a real gap number is wanted, it must come from a joint job-clustered bootstrap with both policies evaluated inside the same replicate, added through router/report.py under its own key -- do NOT paste a number an agent computed in scratch. Success = presentation.html quotes no quantity that is a difference of two one-sided bounds, router.verify still exits 0, and NUMBERS.md and the deck agree on what is bounded and in which direction. DO NOT use the '4.59 < 11.4 MDE' argument: refusal.mde_best_powered_arm_pair.pp is an unweighted arm-pair rate contrast, a different estimand, and asserting it would be an own goal."
+      }
+    ]
+  },
+  {
+    "id": "i0022",
+    "title": "The per-ref data-safety scan fails open: any git error becomes 'branch clean'",
+    "kind": "code",
+    "why": "tests/test_data_safety.py:267 plus loop/push_gate.sh:59 on idea/integrate-turn7. _repo_files() returns None on OSError or CalledProcessError; every content test then raises unittest.SkipTest instead of failing, and python -m unittest exits 0 when everything skips. ds_scan_ref reads only that exit code, so the branch is reported clean having enumerated zero files, and push_all_branches pushes it. PROVEN this turn without any exotic input: DATA_SAFETY_SCAN_REF=refs/heads/no-such-branch-xyz python -m unittest tests.test_data_safety exits 0 with 'OK (skipped=6)'. Same fail-open shape in RepoCarriesNoOpaqueExportToken, which skips outright when export/ is absent or partial -- so on a machine without the export the headline raw-id detector is inert and green. This is the i0010 fail-open class reappearing inside the gate written to close it. Found by the turn-8 review turn (security-reviewer and the code-review skill converged on it independently).",
+    "status": "accepted",
+    "branch": null,
+    "created_turn": 8,
+    "notes": [
+      {
+        "turn": 8,
+        "text": "DATA-SAFETY. Fix: treat any git-subprocess failure during a scan as RED, never skip. Concretely -- (1) _repo_files() must raise rather than return None when SCAN_REF is set, since 'git is unavailable' is a plausible excuse on a developer laptop and never a plausible one for a ref the gate just enumerated from for-each-ref; (2) ds_scan_ref must not trust the exit code alone -- have the suite print a machine-readable line naming how many files it actually enumerated and how many tests it ran, and have push_gate.sh refuse the branch when that count is zero or the line is absent; (3) RepoCarriesNoOpaqueExportToken must FAIL, not skip, when export/ is missing while the gate is running, since an inert detector is indistinguishable from a clean repo. Success = a test that points DATA_SAFETY_SCAN_REF at an unresolvable ref and asserts a NON-zero exit, plus a test that stubs the export away and asserts the opaque-token class fails rather than skips, plus the existing 140 stay green. Related but separate: ds_scan_ref re-runs the whole module per branch, redoing the 101 MB export walk ~11x per turn; scope it to the classes that need it while you are in here."
+      }
+    ]
+  },
+  {
+    "id": "i0023",
+    "title": "Branch names reach git push and the ref scanners as bare arguments, so an option-shaped ref name executes code",
+    "kind": "code",
+    "why": "loop/push_gate.sh:91 and :101 on idea/integrate-turn7 ('git -C ROOT rev-parse $br', 'git -C ROOT push -q $REMOTE $br'), plus tests/test_data_safety.py:259 ('git ls-tree -r --name-only -z $SCAN_REF') and :108 ('git cat-file $ref:$rel'). None uses a -- separator. git branch and git checkout -b refuse option-shaped names, but git update-ref and a direct write under .git/refs/heads do not, and a turn agent runs with bypassPermissions and unrestricted bash. The turn-8 security reviewer built a throwaway repo with a ref named as a --receive-pack= assignment and ran this branch's own push_all_branches against it: git push spawned the named program, which executed locally as the operator's user, while the gate logged only 'WARN: push of ... failed'. The same name makes ls-tree exit 129, which lands in the fail-open path of i0022, so such a branch is reported clean AND then triggers the push. Reachable from every supervisor turn (loop/run.sh:342) and from loop/bootstrap.sh:112 with PUSH=1 shipped as the default.",
+    "status": "accepted",
+    "branch": null,
+    "created_turn": 8,
+    "notes": [
+      {
+        "turn": 8,
+        "text": "SECURITY. Fix in two layers, both cheap. (1) Validate before use: run 'git check-ref-format --branch $br' on every name coming out of for-each-ref and refuse the branch loudly if it does not pass -- an option-shaped ref in this repo is never legitimate and should stop the push cycle for that branch, not be silently pushed. (2) Add the -- separator everywhere an attacker-influenced name is an argument: 'git push -q $REMOTE -- $br', 'git rev-parse -- $br', 'git ls-tree -r --name-only -z $SCAN_REF --', and pin the push to the SHA that was scanned rather than re-resolving the name ('sha=$(git rev-parse --verify $br^{commit})' once, then push $sha:refs/heads/$br) which also closes the scan-then-push TOCTOU the reviewer raised. Success = tests/test_push_gate.py grows cases whose branch names lead with a dash, carry an = option shape, contain a space and contain a glob character, asserting each is refused and that the clean branches in the same cycle still push. The existing suite only exercises ordinary identifiers, which is why it is green despite this."
+      },
+      {
+        "turn": 8,
+        "text": "SCOPE CORRECTION, verified after filing: this is NOT introduced by idea/integrate-turn7. main already carries the identical bare-argument form at loop/run.sh:182 and loop/bootstrap.sh:100 ('git push -q $REMOTE $br'). The branch moves it into push_gate.sh unchanged. So it is pre-existing debt, the branch is not a regression on this axis, and this finding must NOT block the merge -- fix it in its own implement turn, in push_gate.sh once the branch has landed so it is fixed in one place rather than three."
+      }
+    ]
+  },
+  {
+    "id": "i0024",
+    "title": "test_push_gate.py defines a test class below its __main__ guard, so it is skipped on direct execution",
+    "kind": "code",
+    "why": "tests/test_push_gate.py:257 on idea/integrate-turn7. 'if __name__ == \"__main__\": unittest.main()' sits above class OpaqueTokenScanIsRefAware, so running the file directly exits before that class is defined and reports OK having never run the tests that pin the bug commit 4da8330 fixed. make test uses discovery and does collect them (14 tests), so this is not currently a live gap -- it is a silent-non-collection trap and it is inconsistent with every other new test file in the branch, all of which put the guard last. Found by the code-review skill and the python-reviewer independently.",
+    "status": "accepted",
+    "branch": null,
+    "created_turn": 8,
+    "notes": [
+      {
+        "turn": 8,
+        "text": "Trivial and mechanical, so it skips evaluate: move the __main__ guard to the bottom of the file. Success = 'python tests/test_push_gate.py' reports the same test count as 'python -m unittest tests.test_push_gate' (14), asserted by a test that compares the two counts, or at minimum by the reviewer running both."
+      }
+    ]
+  },
+  {
+    "id": "i0025",
+    "title": "router.verify's prose stripper leaks numerals from an unclosed markdown fence and from a > inside a quoted attribute",
+    "kind": "code",
+    "why": "router/verify.py:161 and :160 on idea/integrate-turn7. (1) _FENCE_RE requires a CLOSING fence, and unlike the HTML path there is no open-fence-at-EOF fallback -- verify.prose('...\\n```bash\\nrun-command --threshold 999\\n','markdown') leaves 999 in the scanned prose, so a dropped closing fence in README.md either fails the gate for the wrong reason or mis-binds a shell literal to a small-int claim. (2) _TAG_RE is '<[^>]+>' and closes at the first > including one inside a quoted attribute: prose('<div title=\"revenue 5 > 2 loss\">only 7 remains</div>','html') leaks the 2 that no reader ever sees. (3) The percent lookahead at :260 slices a fixed 2 characters, so two spaces before a % silently disables the claim-as-fraction path and a legitimate percent reports as an orphan. All three are latent against the five shipped artifacts today (verified), none is covered by a test. Found by the python-reviewer with reproductions.",
+    "status": "proposed",
+    "branch": null,
+    "created_turn": 8,
+    "notes": [
+      {
+        "turn": 8,
+        "text": "Ordinary parser hardening, goes through evaluate: all three are latent and the gate is green today. If the evaluate turn accepts, success = tests/test_verify.py gains an unclosed-fence markdown case and a >-inside-attribute HTML case, and the percent lookahead scans to the next non-space rather than slicing 2 characters."
+      }
+    ]
+  },
+  {
+    "id": "i0026",
+    "title": "loop/README.md still says raw identifiers are uncovered and greps are manual, on the same branch that closes i0005",
+    "kind": "presentation",
+    "why": "loop/README.md:86 on idea/integrate-turn7 says raw ids 'are covered by backlog i0005; until that lands, the review turn greps for them by hand', while that same branch implements i0005, flags it implemented, and has docs/DATA-SAFETY-DEBT.md declare it closed. The doc and the code disagree about which control exists. This is exactly the i0013 class -- a safety sentence that is wrong in the reassuring direction is what lets the next review turn stop looking. Found by the code-review skill.",
+    "status": "accepted",
+    "branch": null,
+    "created_turn": 8,
+    "notes": [
+      {
+        "turn": 8,
+        "text": "DATA-SAFETY (documentation half), and it must land in the SAME commit as whichever fix settles i0022 -- the sentence has to describe the control that actually exists at that moment. Fix: restate loop/README.md:86 to say raw identifiers are covered by the opaque-token detector, name its real limits (the length floor of i0018, and the fail-open of i0022 until that is fixed), and drop the 'the review turn greps by hand' instruction once it is no longer the control. Success = a grep for the stale sentence returns nothing and docs/DATA-SAFETY-DEBT.md, loop/README.md and tests/test_data_safety.py's docstrings agree on which classes are detected."
       }
     ]
   }
