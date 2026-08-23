@@ -556,13 +556,37 @@ class RepoCarriesNoOpaqueExportToken(unittest.TestCase):
         export whether it knows it. A token the export knows came from the
         export.
 
-    WHAT COUNTS AS OPAQUE
-        A maximal run of [A-Za-z0-9_-], 16 to 64 characters, mixing letters and
-        digits. Maximal matters: `data:...;base64,` payloads are stripped first,
-        because presentation.html inlines a 577 KB matplotlib PNG whose `+` and
-        `/` bytes otherwise shatter it into ~9000 fragments of exactly this
-        shape. With the strip in place the whole repo yields ~24 candidates,
-        which is small enough to scan the 101 MB export against directly.
+    WHAT COUNTS AS OPAQUE -- TWO WINDOWS, AND WHY NOT ONE
+        LONG: a maximal run of [A-Za-z0-9_-], 16 to 64 characters, mixing
+        letters and digits. That is the shape of a key, a uuid or a session id.
+
+        COMPACT: a maximal run of [A-Za-z0-9] with NO separator, 8 to 15
+        characters, mixing letters and digits, minus two structural rejections
+        below. The three raw identifiers this class cites are 11 characters, so
+        the long window alone matched none of them and the control was inert
+        (backlog i0018). `OpaqueDetectorCatchesTheIncidentItWasWrittenFor`
+        replays that commit and is the test that keeps this honest.
+
+        Simply lowering the long window to 8 was measured and REJECTED: it takes
+        the repo from 27 candidates to 88 and 18 of those occur in the export by
+        coincidence -- model ids, feature-column names, dates -- so the corpus
+        test would be permanently and uninformatively red. Every one of the 18
+        carries a `-` or a `_`. Excluding separators below 16 costs nothing real
+        (a raw identifier is not hyphenated) and drops the false positives to 1.
+
+        The two structural rejections in the compact window, both measured:
+        `word1024` / `1024word` is a name with a size on it, not an identifier;
+        and `<digits>x<digits>` is a pixel dimension -- `1920x1080` appears in
+        loop/JOURNAL.md and in the export by pure coincidence, and it was the
+        last false positive left. Both are shape rules, so neither can grow the
+        way an allowlist can.
+
+        Maximal matters: `data:...;base64,` payloads are stripped first, because
+        presentation.html inlines a 577 KB matplotlib PNG whose `+` and `/`
+        bytes otherwise shatter it into ~9000 fragments of exactly this shape.
+        With the strip and both windows in place the whole repo yields 36
+        candidates over 126 files, 0 of which the export knows -- small enough
+        to scan the 101 MB export against directly, in ~3 s either way.
 
     WHAT IS STRUCTURALLY EXEMPT
         The arm identifiers in router.pricing.OBSERVED_ARMS. They are the
@@ -580,6 +604,11 @@ class RepoCarriesNoOpaqueExportToken(unittest.TestCase):
     """
 
     OPAQUE_RE = re.compile(r"(?<![A-Za-z0-9_-])[A-Za-z0-9_-]{16,64}(?![A-Za-z0-9_-])")
+    COMPACT_RE = re.compile(r"(?<![A-Za-z0-9_-])[A-Za-z0-9]{8,15}(?![A-Za-z0-9_-])")
+    #: A name with a size attached, not an identifier.
+    WORD_THEN_DIGITS_RE = re.compile(r"\A[A-Za-z]+[0-9]+\Z|\A[0-9]+[A-Za-z]+\Z")
+    #: A pixel dimension. The one false positive the compact window otherwise has.
+    DIMENSION_RE = re.compile(r"\A[0-9]+[xX][0-9]+\Z")
     DATA_URI_RE = re.compile(r"data:[A-Za-z0-9.+/-]*;base64,[A-Za-z0-9+/=\s]+")
     CHUNK = 8 * 1024 * 1024
     MAX_FILE = 16 * 1024 * 1024
@@ -603,11 +632,20 @@ class RepoCarriesNoOpaqueExportToken(unittest.TestCase):
             return frozenset()
         return frozenset(OBSERVED_ARMS)
 
+    @staticmethod
+    def _mixed(token):
+        return (any(c.isdigit() for c in token)
+                and any(c.isalpha() for c in token))
+
     @classmethod
     def _opaque(cls, blob):
         blob = cls.DATA_URI_RE.sub(" ", blob)
-        return {t for t in cls.OPAQUE_RE.findall(blob)
-                if any(c.isdigit() for c in t) and any(c.isalpha() for c in t)}
+        found = {t for t in cls.OPAQUE_RE.findall(blob) if cls._mixed(t)}
+        found |= {t for t in cls.COMPACT_RE.findall(blob)
+                  if cls._mixed(t)
+                  and not cls.WORD_THEN_DIGITS_RE.match(t)
+                  and not cls.DIMENSION_RE.match(t)}
+        return found
 
     @classmethod
     def _candidates(cls, paths, exempt):
@@ -696,13 +734,165 @@ class RepoCarriesNoOpaqueExportToken(unittest.TestCase):
             "Offenders: %s" % offenders)
 
 
+class OpaqueDetectorCatchesTheIncidentItWasWrittenFor(unittest.TestCase):
+    """The detector above must catch the tokens whose removal it cites.
+
+    WHY THIS EXISTS
+        `RepoCarriesNoOpaqueExportToken` is a corpus test: it is green when the
+        repo is clean and equally green when its extractor matches nothing. Its
+        docstring cites the three raw identifiers removed in commit af4e78b as
+        the incident it prevents -- and it matched none of them, because they
+        are 11 characters long and its window started at 16. A control that
+        cannot detect its own stated class defeats itself (backlog i0018).
+
+        So this class replays the incident. It reads both sides of that commit
+        out of history, takes every token the commit removed, keeps the ones the
+        export actually knows, and asserts each is caught by one of this file's
+        detectors. No token is written into this file: the fixture is the
+        commit itself, and failures print masked shapes only.
+
+    WHICH DETECTOR CATCHES WHICH
+        Two of the five removed tokens are placeholder-shaped and belong to
+        `RepoSourceCarriesNoExportContent`; three are raw identifiers with no
+        shape at all and belong to the opaque detector. The assertion is on the
+        UNION of the two, because between them they are the whole control.
+    """
+
+    FIXTURE_COMMIT = "af4e78b"
+    FIXTURE_PATH = "docs/POSTMORTEM-textclf.md"
+
+    #: Deliberately wider than either detector: this is the ground truth they
+    #: are measured against, not a third detector.
+    WIDE_RE = re.compile(r"(?<![A-Za-z0-9_-])[A-Za-z0-9_-]{6,64}(?![A-Za-z0-9_-])")
+
+    @classmethod
+    def setUpClass(cls):
+        if not os.path.isdir(EXPORT):
+            raise unittest.SkipTest("the licensed corpus is not present")
+        before = cls._at(cls.FIXTURE_COMMIT + "^")
+        after = cls._at(cls.FIXTURE_COMMIT)
+        if before is None or after is None:
+            raise unittest.SkipTest("commit %s is not reachable in this checkout"
+                                    % cls.FIXTURE_COMMIT)
+        removed = cls._wide(before) - cls._wide(after)
+        cls.known = RepoCarriesNoOpaqueExportToken._which_occur_in_export(removed)
+
+    @classmethod
+    def _at(cls, rev):
+        try:
+            out = subprocess.run(["git", "show", "%s:%s" % (rev, cls.FIXTURE_PATH)],
+                                 cwd=REPO_ROOT, capture_output=True, check=True)
+        except (OSError, subprocess.CalledProcessError):
+            return None
+        return out.stdout.decode("utf-8", "replace")
+
+    @classmethod
+    def _wide(cls, blob):
+        return {t for t in cls.WIDE_RE.findall(blob)
+                if any(c.isdigit() for c in t) and any(c.isalpha() for c in t)}
+
+    @staticmethod
+    def _caught_by_a_detector(token):
+        """True if any detector in this file matches the token."""
+        placeholder = RepoSourceCarriesNoExportContent
+        if placeholder.CONCRETE_PII.findall(token):
+            return True
+        if placeholder.CONCRETE_ENTITY.findall(token):
+            return True
+        return token in RepoCarriesNoOpaqueExportToken._opaque(token)
+
+    def test_the_fixture_commit_really_removed_corpus_content(self):
+        """Control. Without it the assertion below is vacuous on an empty set."""
+        self.assertGreaterEqual(
+            len(self.known), 3,
+            "commit %s removed only %d token(s) the corpus knows; the fixture no "
+            "longer reproduces the incident and this class proves nothing"
+            % (self.FIXTURE_COMMIT, len(self.known)))
+
+    def test_every_removed_token_the_corpus_knows_is_caught(self):
+        missed = sorted(RepoCarriesNoOpaqueExportToken._mask(t)
+                        for t in self.known if not self._caught_by_a_detector(t))
+        self.assertEqual(
+            missed, [],
+            "these tokens were removed from %s BECAUSE they are corpus content, "
+            "and no detector in this file matches them -- shapes only, never the "
+            "value: %s" % (self.FIXTURE_PATH, missed))
+
+
+class CompactOpaqueTokenShapes(unittest.TestCase):
+    """Unit tests for the compact half of the opaque pattern, not for the repo.
+
+    Same reasoning as `ConcretePlaceholderShapes`: a corpus test is green when
+    the extractor is blind, so the extractor needs tests of its own. Every probe
+    here is synthesised. The two that are real strings -- a screen resolution
+    and an embedding width -- are structural shapes, not corpus content.
+    """
+
+    CLS = RepoCarriesNoOpaqueExportToken
+
+    def _opaque(self, text):
+        return self.CLS._opaque(text)
+
+    def test_an_eleven_character_identifier_is_caught(self):
+        """The i0018 regression: the 16-char floor missed exactly this length."""
+        for probe in ("Q7A4B2CD3EF", "R28XYZ4LMN5", "T591M8KK7PQ"):
+            self.assertEqual(self._opaque("id %s here" % probe), {probe}, probe)
+
+    def test_the_floor_is_eight_characters(self):
+        self.assertEqual(self._opaque("A1B2C3D"), set())          # 7 -- below
+        self.assertEqual(self._opaque("A1B2C3D4"), {"A1B2C3D4"})  # 8 -- at
+
+    def test_the_long_window_still_takes_separator_bearing_tokens(self):
+        probe = "sess-4f2a-11ee-9c0b-2b7d3a"
+        self.assertEqual(self._opaque("path/%s/x" % probe), {probe})
+
+    def test_a_compact_token_carrying_a_separator_is_not_compact(self):
+        """8..15 is alnum-only on purpose. Allowing `-` and `_` down there costs
+        18 false positives against the corpus (measured on this tree): model
+        ids, field names and dates that collide by coincidence. The
+        separator-bearing window therefore still starts at 16.
+        """
+        self.assertEqual(self._opaque("claude-5-a1"), set())
+
+    def test_a_word_with_an_attached_serial_is_a_name_not_an_identifier(self):
+        for probe in ("modernbert1024", "embeddings768", "1024channels"):
+            self.assertEqual(self._opaque(probe), set(), probe)
+
+    def test_the_rejection_is_only_for_a_single_word_digit_boundary(self):
+        """`L1024tokens` alternates and stays a candidate. The rejection above is
+        deliberately narrow: widening it to any letter/digit mixture would throw
+        away the very shape the compact window exists to catch.
+        """
+        self.assertEqual(self._opaque("L1024tokens"), {"L1024tokens"})
+
+    def test_a_pixel_dimension_is_not_an_identifier(self):
+        """Measured carve-out: `1920x1080` sits in loop/JOURNAL.md AND in the
+        corpus, by pure coincidence. Narrow, documented, and it cannot grow.
+        """
+        self.assertEqual(self._opaque("rendered at 1920x1080 ok"), set())
+
+    def test_a_base64_payload_still_contributes_nothing(self):
+        blob = "data:image/png;base64," + ("iVBORw0KGgoAAAANSUhEUg" * 40)
+        self.assertEqual(self._opaque(blob), set())
+
+    def test_letters_only_and_digits_only_are_never_opaque(self):
+        self.assertEqual(self._opaque("abcdefghijkl 123456789012"), set())
+
 #: Under SCAN_REF only these run. The other two classes are working-tree
 #: concerns -- generated artifacts and untracked files -- and neither can travel
 #: through a ref; running them once per branch re-walked the export for nothing.
 REF_AWARE = ("RepoCarriesNoPresignedSignature",
              "RepoSourceCarriesNoExportContent",
              "ConcretePlaceholderShapes",
+             "CompactOpaqueTokenShapes",
              "RepoCarriesNoOpaqueExportToken")
+
+#: `OpaqueDetectorCatchesTheIncidentItWasWrittenFor` is deliberately NOT in the
+#: list above. It is a control on the detector itself: its fixture is a commit
+#: in history, so its verdict is identical for every ref, and it walks the
+#: 101 MB export once at setUpClass. Running it per branch would repeat that
+#: walk ~11x a turn for an answer that cannot change between refs. It runs in
+#: the working-tree scan, which is the scan that has to be right about it.
 
 #: The receipt. `loop/push_gate.sh` refuses a branch when this line is absent,
 #: when `files` is 0, when `ran` is 0, or when `failed` is not 0 -- so a scan
