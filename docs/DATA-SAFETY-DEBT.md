@@ -62,5 +62,11 @@ record, in this file.
   is red. Nothing leaves the machine past a red suite.
 - `loop/prompts/_common.md` hard rule 2: no export content in any tracked file, and `grep -c` any
   concrete-looking token against `export/` before writing it down — counts only.
-- Backlog `i0005` closes the gap that let the raw ids through: the suite matches placeholder
-  *shapes* by regex, and nothing currently catches a raw vendor id.
+- Both detector gaps that let this through are now closed (ADR-010, backlog `i0005` and
+  `i0011`). `RepoCarriesNoOpaqueExportToken` catches a raw vendor id by asking the export whether
+  it knows the token, so it needs no shape; and the concrete-placeholder pattern now accepts any
+  attached separator, not only a trailing `_<digits>`, which is what the shorthand on line 3 of
+  `loop/JOURNAL.md` exploited. Both were confirmed against a seeded leak, and both report a
+  masked shape rather than the value.
+- Neither closes the *history* half of this file. The commits listed above still carry what they
+  carry; a detector added today does not reach them.
