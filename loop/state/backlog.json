@@ -353,13 +353,17 @@
     "title": "The new opaque-token detector cannot catch the incident it was written for",
     "kind": "code",
     "why": "tests/test_data_safety.py:512 on idea/integrate-turn7. RepoCarriesNoOpaqueExportToken.OPAQUE_RE requires a token of 16-64 chars, but the three raw identifiers whose removal the class docstring cites (commit af4e78b, docs/POSTMORTEM-textclf.md section 5) are each 11 chars. Measured this turn: all five tokens removed by af4e78b occur in the export (1, 2, 7, 7025 and 9828 occurrences); zero of the five match OPAQUE_RE. The class is green and detects nothing of its stated class. Found by the turn-8 review turn re-running the detector against the diff that motivated it.",
-    "status": "accepted",
-    "branch": null,
+    "status": "implemented",
+    "branch": "idea/opaque-token-floor",
     "created_turn": 8,
     "notes": [
       {
         "turn": 8,
         "text": "DATA-SAFETY. Not a judgement call: a green detector that cannot detect its own stated class defeats a control. Fix: lower OPAQUE_RE's floor from 16 to 8 characters and keep the mixed-letters-and-digits requirement. MEASURED COST OF DOING SO, so the implement turn does not have to re-derive it: repo-wide candidate tokens go 27 (floor 16) -> 59 (12) -> 63 (11) -> 73 (10) -> 93 (8). The export scan is one streamed pass over the 101 MB file regardless of set size, so runtime is unchanged at ~3 s; the 16-char floor buys nothing. Expect the lower floor to surface benign candidates (arm ids are already exempted via router.pricing.OBSERVED_ARMS; the tracked session-uuid scratch paths in router/textclf/ are the other likely hit -- see i0020). Success = a test that takes the af4e78b^ version of docs/POSTMORTEM-textclf.md as a fixture, extracts its tokens and asserts the detector flags them, plus make test still green. Do NOT write any of those tokens into a tracked file: read them out of git history at test time, or synthesise same-shape tokens and assert on shape. Keep the masked-output-only rule on failure."
+      },
+      {
+        "turn": 11,
+        "text": "TURN 12: flag corrected on main to match reality. This idea is BUILT, tested and green on its branch, and main's copy still read 'accepted' only because an implement turn writes its status to its own branch and never to main. That staleness is not cosmetic -- plan_turn reads main, so six false 'accepted' entries made the supervisor dispatch an implement turn every time from turn 11 onward while the merge turn that would land them stayed unreachable. See i0031 (filed on idea/integrate-turn12) for the measurement and the two candidate durable fixes. NOT MERGED BY THIS TURN, on purpose: the merge turn runs its own gate, and an implement turn moving main past a gate it did not run is the one failure mode that can damage the branch the team presents from."
       }
     ]
   },
@@ -368,13 +372,17 @@
     "title": "router.verify reports PASS when a user-facing artifact is missing",
     "kind": "code",
     "why": "router/verify.py:151 on idea/integrate-turn7. Report.ok is 'not self.orphans' and ignores Report.missing, so an artifact listed in ARTIFACTS that is absent from the tree is printed as 'absent from this tree, skipped' and the run still exits 0 with a PASS line. Reproduced this turn: deleting README.md and presentation.html from a scratch copy of the branch yields 'PASS - 5 numeral(s) across 3 artifact(s)', exit 0. presentation.html is the judged deck, it carries 36 of the 41 bound numerals, and it was created at the repo root only at turn 5 -- any rename or relocation by a later deck turn silently disables the prose gate for the whole deck. Found by the turn-8 review turn.",
-    "status": "accepted",
-    "branch": null,
+    "status": "implemented",
+    "branch": "idea/verify-missing-artifact",
     "created_turn": 8,
     "notes": [
       {
         "turn": 8,
         "text": "Defeats a control rather than being a style opinion -- same class as i0012, so it skips evaluate. Fix: make Report.ok require an empty missing list as well, i.e. 'not self.orphans and not self.missing', and print the missing artifacts in the FAIL block rather than as a quiet aside. If an artifact is legitimately optional it must say so explicitly: add a fourth field to the ARTIFACTS tuples (required True/False) rather than letting absence pass silently. templates/presentation.html is the only plausible optional one. Success = tests/test_verify.py gains a case that copies the tree, removes presentation.html, and asserts main() returns non-zero naming the missing path; existing 140 tests stay green."
+      },
+      {
+        "turn": 11,
+        "text": "TURN 12: flag corrected on main to match reality. This idea is BUILT, tested and green on its branch, and main's copy still read 'accepted' only because an implement turn writes its status to its own branch and never to main. That staleness is not cosmetic -- plan_turn reads main, so six false 'accepted' entries made the supervisor dispatch an implement turn every time from turn 11 onward while the merge turn that would land them stayed unreachable. See i0031 (filed on idea/integrate-turn12) for the measurement and the two candidate durable fixes. NOT MERGED BY THIS TURN, on purpose: the merge turn runs its own gate, and an implement turn moving main past a gate it did not run is the one failure mode that can damage the branch the team presents from."
       }
     ]
   },
@@ -417,13 +425,17 @@
     "title": "The per-ref data-safety scan fails open: any git error becomes 'branch clean'",
     "kind": "code",
     "why": "tests/test_data_safety.py:267 plus loop/push_gate.sh:59 on idea/integrate-turn7. _repo_files() returns None on OSError or CalledProcessError; every content test then raises unittest.SkipTest instead of failing, and python -m unittest exits 0 when everything skips. ds_scan_ref reads only that exit code, so the branch is reported clean having enumerated zero files, and push_all_branches pushes it. PROVEN this turn without any exotic input: DATA_SAFETY_SCAN_REF=refs/heads/no-such-branch-xyz python -m unittest tests.test_data_safety exits 0 with 'OK (skipped=6)'. Same fail-open shape in RepoCarriesNoOpaqueExportToken, which skips outright when export/ is absent or partial -- so on a machine without the export the headline raw-id detector is inert and green. This is the i0010 fail-open class reappearing inside the gate written to close it. Found by the turn-8 review turn (security-reviewer and the code-review skill converged on it independently).",
-    "status": "accepted",
-    "branch": null,
+    "status": "implemented",
+    "branch": "idea/scan-fails-closed",
     "created_turn": 8,
     "notes": [
       {
         "turn": 8,
         "text": "DATA-SAFETY. Fix: treat any git-subprocess failure during a scan as RED, never skip. Concretely -- (1) _repo_files() must raise rather than return None when SCAN_REF is set, since 'git is unavailable' is a plausible excuse on a developer laptop and never a plausible one for a ref the gate just enumerated from for-each-ref; (2) ds_scan_ref must not trust the exit code alone -- have the suite print a machine-readable line naming how many files it actually enumerated and how many tests it ran, and have push_gate.sh refuse the branch when that count is zero or the line is absent; (3) RepoCarriesNoOpaqueExportToken must FAIL, not skip, when export/ is missing while the gate is running, since an inert detector is indistinguishable from a clean repo. Success = a test that points DATA_SAFETY_SCAN_REF at an unresolvable ref and asserts a NON-zero exit, plus a test that stubs the export away and asserts the opaque-token class fails rather than skips, plus the existing 140 stay green. Related but separate: ds_scan_ref re-runs the whole module per branch, redoing the 101 MB export walk ~11x per turn; scope it to the classes that need it while you are in here."
+      },
+      {
+        "turn": 11,
+        "text": "TURN 12: flag corrected on main to match reality. This idea is BUILT, tested and green on its branch, and main's copy still read 'accepted' only because an implement turn writes its status to its own branch and never to main. That staleness is not cosmetic -- plan_turn reads main, so six false 'accepted' entries made the supervisor dispatch an implement turn every time from turn 11 onward while the merge turn that would land them stayed unreachable. See i0031 (filed on idea/integrate-turn12) for the measurement and the two candidate durable fixes. NOT MERGED BY THIS TURN, on purpose: the merge turn runs its own gate, and an implement turn moving main past a gate it did not run is the one failure mode that can damage the branch the team presents from."
       }
     ]
   },
@@ -432,8 +444,8 @@
     "title": "Branch names reach git push and the ref scanners as bare arguments, so an option-shaped ref name executes code",
     "kind": "code",
     "why": "loop/push_gate.sh:91 and :101 on idea/integrate-turn7 ('git -C ROOT rev-parse $br', 'git -C ROOT push -q $REMOTE $br'), plus tests/test_data_safety.py:259 ('git ls-tree -r --name-only -z $SCAN_REF') and :108 ('git cat-file $ref:$rel'). None uses a -- separator. git branch and git checkout -b refuse option-shaped names, but git update-ref and a direct write under .git/refs/heads do not, and a turn agent runs with bypassPermissions and unrestricted bash. The turn-8 security reviewer built a throwaway repo with a ref named as a --receive-pack= assignment and ran this branch's own push_all_branches against it: git push spawned the named program, which executed locally as the operator's user, while the gate logged only 'WARN: push of ... failed'. The same name makes ls-tree exit 129, which lands in the fail-open path of i0022, so such a branch is reported clean AND then triggers the push. Reachable from every supervisor turn (loop/run.sh:342) and from loop/bootstrap.sh:112 with PUSH=1 shipped as the default.",
-    "status": "accepted",
-    "branch": null,
+    "status": "implemented",
+    "branch": "idea/ref-name-injection",
     "created_turn": 8,
     "notes": [
       {
@@ -443,6 +455,10 @@
       {
         "turn": 8,
         "text": "SCOPE CORRECTION, verified after filing: this is NOT introduced by idea/integrate-turn7. main already carries the identical bare-argument form at loop/run.sh:182 and loop/bootstrap.sh:100 ('git push -q $REMOTE $br'). The branch moves it into push_gate.sh unchanged. So it is pre-existing debt, the branch is not a regression on this axis, and this finding must NOT block the merge -- fix it in its own implement turn, in push_gate.sh once the branch has landed so it is fixed in one place rather than three."
+      },
+      {
+        "turn": 11,
+        "text": "TURN 12: flag corrected on main to match reality. This idea is BUILT, tested and green on its branch, and main's copy still read 'accepted' only because an implement turn writes its status to its own branch and never to main. That staleness is not cosmetic -- plan_turn reads main, so six false 'accepted' entries made the supervisor dispatch an implement turn every time from turn 11 onward while the merge turn that would land them stayed unreachable. See i0031 (filed on idea/integrate-turn12) for the measurement and the two candidate durable fixes. NOT MERGED BY THIS TURN, on purpose: the merge turn runs its own gate, and an implement turn moving main past a gate it did not run is the one failure mode that can damage the branch the team presents from."
       }
     ]
   },
@@ -451,13 +467,17 @@
     "title": "test_push_gate.py defines a test class below its __main__ guard, so it is skipped on direct execution",
     "kind": "code",
     "why": "tests/test_push_gate.py:257 on idea/integrate-turn7. 'if __name__ == \"__main__\": unittest.main()' sits above class OpaqueTokenScanIsRefAware, so running the file directly exits before that class is defined and reports OK having never run the tests that pin the bug commit 4da8330 fixed. make test uses discovery and does collect them (14 tests), so this is not currently a live gap -- it is a silent-non-collection trap and it is inconsistent with every other new test file in the branch, all of which put the guard last. Found by the code-review skill and the python-reviewer independently.",
-    "status": "accepted",
-    "branch": null,
+    "status": "implemented",
+    "branch": "idea/scan-fails-closed",
     "created_turn": 8,
     "notes": [
       {
         "turn": 8,
         "text": "Trivial and mechanical, so it skips evaluate: move the __main__ guard to the bottom of the file. Success = 'python tests/test_push_gate.py' reports the same test count as 'python -m unittest tests.test_push_gate' (14), asserted by a test that compares the two counts, or at minimum by the reviewer running both."
+      },
+      {
+        "turn": 11,
+        "text": "TURN 12: flag corrected on main to match reality. This idea is BUILT, tested and green on its branch, and main's copy still read 'accepted' only because an implement turn writes its status to its own branch and never to main. That staleness is not cosmetic -- plan_turn reads main, so six false 'accepted' entries made the supervisor dispatch an implement turn every time from turn 11 onward while the merge turn that would land them stayed unreachable. See i0031 (filed on idea/integrate-turn12) for the measurement and the two candidate durable fixes. NOT MERGED BY THIS TURN, on purpose: the merge turn runs its own gate, and an implement turn moving main past a gate it did not run is the one failure mode that can damage the branch the team presents from."
       }
     ]
   },
@@ -481,13 +501,17 @@
     "title": "loop/README.md still says raw identifiers are uncovered and greps are manual, on the same branch that closes i0005",
     "kind": "presentation",
     "why": "loop/README.md:86 on idea/integrate-turn7 says raw ids 'are covered by backlog i0005; until that lands, the review turn greps for them by hand', while that same branch implements i0005, flags it implemented, and has docs/DATA-SAFETY-DEBT.md declare it closed. The doc and the code disagree about which control exists. This is exactly the i0013 class -- a safety sentence that is wrong in the reassuring direction is what lets the next review turn stop looking. Found by the code-review skill.",
-    "status": "accepted",
-    "branch": null,
+    "status": "implemented",
+    "branch": "idea/scan-fails-closed",
     "created_turn": 8,
     "notes": [
       {
         "turn": 8,
         "text": "DATA-SAFETY (documentation half), and it must land in the SAME commit as whichever fix settles i0022 -- the sentence has to describe the control that actually exists at that moment. Fix: restate loop/README.md:86 to say raw identifiers are covered by the opaque-token detector, name its real limits (the length floor of i0018, and the fail-open of i0022 until that is fixed), and drop the 'the review turn greps by hand' instruction once it is no longer the control. Success = a grep for the stale sentence returns nothing and docs/DATA-SAFETY-DEBT.md, loop/README.md and tests/test_data_safety.py's docstrings agree on which classes are detected."
+      },
+      {
+        "turn": 11,
+        "text": "TURN 12: flag corrected on main to match reality. This idea is BUILT, tested and green on its branch, and main's copy still read 'accepted' only because an implement turn writes its status to its own branch and never to main. That staleness is not cosmetic -- plan_turn reads main, so six false 'accepted' entries made the supervisor dispatch an implement turn every time from turn 11 onward while the merge turn that would land them stayed unreachable. See i0031 (filed on idea/integrate-turn12) for the measurement and the two candidate durable fixes. NOT MERGED BY THIS TURN, on purpose: the merge turn runs its own gate, and an implement turn moving main past a gate it did not run is the one failure mode that can damage the branch the team presents from."
       }
     ]
   }
