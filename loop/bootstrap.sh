@@ -16,6 +16,12 @@ source "$ROOT/loop/config.env"
 
 PY="$ROOT/.venv/bin/python"
 BASE_BRANCH="${1:-tool-block-levers}"
+LOGDIR="$ROOT/loop/logs"
+
+# One implementation of "may this ref be pushed", shared with loop/run.sh. Sourcing it has
+# no side effects; it only defines functions.
+# shellcheck source=/dev/null
+source "$ROOT/loop/push_gate.sh"
 
 die() { printf '\n  REFUSING: %s\n\n' "$*" >&2; exit 1; }
 step() { printf '\n=== %s ===\n' "$*"; }
@@ -58,8 +64,11 @@ step "gate: does $BASE_BRANCH actually work?"
 
 git checkout -q "$BASE_BRANCH" || die "could not check out $BASE_BRANCH"
 
-make test    || die "make test failed on $BASE_BRANCH -- not promoting a red branch to main"
+# `make all` runs FIRST on purpose. Two classes in tests/test_data_safety.py scan the
+# generated artifacts and raise SkipTest when that directory does not exist yet, so a
+# suite run before the pipeline has built anything is green for the wrong reason.
 make all     || die "make all failed on $BASE_BRANCH -- not promoting a broken pipeline to main"
+make test    || die "make test failed on $BASE_BRANCH -- not promoting a red branch to main"
 "$PY" -m router.gates || die "router.gates failed on $BASE_BRANCH -- not promoting past the publication gate"
 
 printf '  gate green on %s\n' "$BASE_BRANCH"
@@ -94,15 +103,18 @@ the merged state fails it." \
 
 step "push every branch"
 
+# This loop is where the night-one leak happened: it pushed every branch with no check of
+# any kind, and one of them carried raw identifiers out of export/ to a shared repository.
+# It now goes through the same gate run.sh uses -- working tree once, then each branch
+# against its own tree -- and refuses rather than guesses.
 if [ "$PUSH" = "1" ]; then
-  while read -r br; do
-    case "$br" in entire/*) continue ;; esac
-    if git push -q "$REMOTE" "$br" 2>/dev/null; then
-      printf '  pushed %s\n' "$br"
-    else
-      printf '  WARN: push of %s failed\n' "$br"
-    fi
-  done < <(git for-each-ref --format='%(refname:short)' refs/heads)
+  DIVERGED=0
+  if push_all_branches; then
+    printf '  pushed every branch past the data-safety gate\n'
+  else
+    die "the data-safety gate refused at least one branch -- see loop/logs/data-safety*.log.
+  Nothing was force-pushed and nothing was deleted; fix the offending tree and re-run."
+  fi
 else
   printf '  PUSH=0 in loop/config.env -- staying local\n'
 fi
