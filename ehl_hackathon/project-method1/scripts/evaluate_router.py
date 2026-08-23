@@ -13,7 +13,8 @@ from method1.evaluation.doubly_robust import evaluate_doubly_robust
 from method1.evaluation.matching import matched_outcomes
 from method1.evaluation.offline_policy_eval import evaluate_policy
 from method1.pricing import CostModel, ensure_models, load_pricing
-from method1.quality.outcome_model import composite_outcome
+from method1.quality.ground_truth import load_ground_truth
+from method1.quality.outcome_model import calibrated_outcome
 from method1.routing.baselines import CheapestRouter, LoggedRouter, StrongestRouter
 from method1.routing.cache_aware_router import CacheAwareRouter
 from method1.routing.difficulty_router import DifficultyRouter
@@ -26,16 +27,20 @@ def main() -> None:
     trajectories = load_trajectories(source)
     partitions = split_trajectories(trajectories)
     test = partitions["test"] or partitions["validation"] or trajectories
-    models = sorted({trajectory.logged_model for trajectory in trajectories if trajectory.logged_model != "mixed"})
+    models = sorted({call.model for trajectory in trajectories for call in trajectory.calls})
     pricing = ensure_models(load_pricing(), models)
     cost_model = CostModel(pricing)
+    ground_truth = load_ground_truth(source)
+    train_calibrated = {item.key: calibrated_outcome(item, ground_truth)[0] for item in (partitions["train"] or trajectories)}
     if model_path.exists():
         predictor = DifficultyRouter.load(model_path, cost_model)
     else:
-        predictor = DifficultyRouter(models, cost_model).fit(partitions["train"] or trajectories, {item.key: composite_outcome(item) for item in (partitions["train"] or trajectories)})
+        predictor = DifficultyRouter(models, cost_model).fit(partitions["train"] or trajectories, train_calibrated)
     proposed = CacheAwareRouter(predictor, quality_target=None, cost_weight=0.15)
     policies = {"logged": LoggedRouter(cost_model), "cheapest": CheapestRouter(models, cost_model), "strongest": StrongestRouter(models, cost_model), "method1": proposed}
-    outcomes = {item.key: composite_outcome(item) for item in trajectories}
+    calibrated = {item.key: calibrated_outcome(item, ground_truth) for item in trajectories}
+    outcomes = {key: value for key, (value, _) in calibrated.items()}
+    ground_truth_count = sum(1 for _, kind in calibrated.values() if kind == "ground_truth")
     metrics = []
     rows = {}
     for name, policy in policies.items():
@@ -43,7 +48,7 @@ def main() -> None:
         metrics.append(result.to_dict())
         rows[name] = policy_rows
     dr = evaluate_doubly_robust(test, proposed, outcomes, models)
-    payload = {"split": "test", "n_test": len(test), "quality_type": "proxy", "policies": metrics, "doubly_robust": dr, "matched_outcomes": matched_outcomes(test, outcomes), "rows": rows}
+    payload = {"split": "test", "n_test": len(test), "quality_type": "calibrated" if ground_truth_count else "proxy", "ground_truth_labels": ground_truth_count, "proxy_labels": len(trajectories) - ground_truth_count, "policies": metrics, "doubly_robust": dr, "matched_outcomes": matched_outcomes(test, outcomes), "rows": rows}
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     print(json.dumps({"split": "test", "trajectories": len(test), "policies": metrics, "doubly_robust": dr}, indent=2))

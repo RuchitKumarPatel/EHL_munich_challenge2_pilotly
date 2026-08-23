@@ -35,10 +35,16 @@ class LoggedRouter:
         self.cost_model = cost_model
 
     def route(self, trajectory: Trajectory) -> RouteDecision:
+        # Replay the real per-call model sequence rather than assuming one model for
+        # the whole trajectory: trajectory.logged_model is "mixed" whenever the logged
+        # session actually switched models mid-way, and pricing has no entry for the
+        # literal string "mixed". Per-call replay also feeds CostModel's existing
+        # switch-detection so a mid-session switch correctly loses cache credit.
         model = trajectory.logged_model
-        route = [model] * trajectory.n_calls
+        route = [call.model for call in trajectory.calls]
         cost, _ = self.cost_model.trajectory_cost(trajectory, route)
-        score = MODEL_STRENGTH.get(model, 0.5)
+        strengths = [MODEL_STRENGTH.get(m, 0.5) for m in route]
+        score = sum(strengths) / len(strengths)
         return RouteDecision(model, route, score, cost, 0.0, {model: score}, {model: cost})
 
 

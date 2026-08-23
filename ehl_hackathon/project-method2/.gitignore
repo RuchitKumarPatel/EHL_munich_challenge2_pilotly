@@ -1,0 +1,11 @@
+data/raw/
+data/parquet/
+data/features/
+data/labels/
+data/splits/
+models/
+results/
+__pycache__/
+*.pyc
+.venv/
+

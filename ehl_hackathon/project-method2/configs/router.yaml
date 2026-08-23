@@ -1,0 +1,6 @@
+minimum_support: 3
+allowed_quality_loss: 0.02
+residual_quantile: 0.9
+cache_aware: true
+fallback: logged_model
+

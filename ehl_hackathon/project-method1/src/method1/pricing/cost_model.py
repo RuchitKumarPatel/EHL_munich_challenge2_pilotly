@@ -7,7 +7,13 @@ from .cache_model import call_cost
 
 
 class CostModel:
-    def __init__(self, pricing: dict[str, dict[str, float]], switch_penalty_tokens: int = 0) -> None:
+    # Losing the KV-cache prefix on a mid-trajectory model switch is already modeled
+    # below (previous_call reset to None -> next call's overlap is 0). This constant
+    # adds an *additional* charge for the real-world overhead of establishing a fresh
+    # session with the new model (re-sending system/tool-schema context, cold start).
+    # 256 tokens ~= one typical system-prompt block; no empirical measurement backs
+    # this number, it's a documented placeholder pending real switch-cost telemetry.
+    def __init__(self, pricing: dict[str, dict[str, float]], switch_penalty_tokens: int = 256) -> None:
         self.pricing = pricing
         self.switch_penalty_tokens = switch_penalty_tokens
 
@@ -27,6 +33,7 @@ class CostModel:
                 switches += 1
                 previous_call = None
                 uncached += self.switch_penalty_tokens
+                total += (self.switch_penalty_tokens * self.pricing[model]["input"]) / 1000
             overlap = 0 if previous_call is None else min(call.estimated_tokens, common_prefix_tokens(previous_call, call))
             cached += overlap
             uncached += max(0, call.estimated_tokens - overlap)

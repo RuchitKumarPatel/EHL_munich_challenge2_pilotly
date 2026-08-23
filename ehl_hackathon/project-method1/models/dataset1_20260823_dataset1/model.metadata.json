@@ -1,0 +1,16 @@
+{
+  "source": "../dataset1/export",
+  "models": [
+    "claude-fable-5",
+    "claude-opus-4-8",
+    "claude-opus-5",
+    "claude-sonnet-5",
+    "gpt-5.6-luna",
+    "gpt-5.6-sol",
+    "gpt-5.6-terra"
+  ],
+  "train_trajectories": 87,
+  "quality_type": "calibrated",
+  "ground_truth_labels": 16,
+  "proxy_labels": 71
+}
