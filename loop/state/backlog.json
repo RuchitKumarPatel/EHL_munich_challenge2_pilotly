@@ -204,13 +204,17 @@
     "title": "plan_turn starves the review turn whenever deck_every divides review_every",
     "kind": "code",
     "why": "loop/backlog.py:101-104 returns 'deck' before testing the review cadence, so every turn matching review_every also matches deck_every and review never runs. Measured over turns 1..40: (5,4) fires, but (5,10), (4,4), (5,5) and (3,6) never fire once. Current config is safe by luck, not design. Same function, loop/backlog.py:101: deck_every has no >0 guard where review_every has one and config.env documents '0 disables' only for REVIEW_EVERY -- deck_every=0 raises ZeroDivisionError, run.sh captures empty stdout with no exit check, and the loop stops logging 'unknown turn type' with the real cause buried in a log. Both verified empirically.",
-    "status": "accepted",
-    "branch": null,
+    "status": "implemented",
+    "branch": "idea/plan-turn-cadence",
     "created_turn": 4,
     "notes": [
       {
         "turn": 4,
         "text": "Not a judgement call -- verified repro, and it silently disables the periodic security review, so it defeats a control rather than being a style opinion. Fix: guard both cadences the same way, and let review win the tie (a stale deck costs one turn; a skipped review costs the night). Success = tests/test_backlog_plan.py asserting review fires at least once per review_every*2 turns across (5,4),(5,10),(4,4),(5,5),(3,6), and that deck_every=0 disables rather than raises."
+      },
+      {
+        "turn": 6,
+        "text": "IMPLEMENTED on idea/plan-turn-cadence (66b8a64). Repro confirmed before the fix: over turns 1..40 with a non-empty queue, review fired 0 times for (5,10), (4,4), (5,5) and (3,6); the shipped (5,4) fired 8 of its 10 multiples, losing turns 20 and 40. deck_every=0 raised ZeroDivisionError.\n\nThe obvious fix is wrong and was measured rather than assumed: swapping the two checks moves the starvation onto the deck -- with deck_every == review_every every deck multiple is a tie, and the deck then fires 0 times for (4,4) and (5,5). Shipped rule is review-wins-the-tie PLUS a deferral, so a deck that loses a tie runs on the very next turn. Both cadences share one _cadence_due(turn, every) guard, so <=0 disables either identically.\n\nMeasured after the fix over the FULL grid deck_every 1..12 x review_every 1..12, turns 1..40: 0 review multiples missed, and deck staleness bounded at deck_every+1 for every pair with review_every>=2 (review_every=1 excluded -- that means the operator asked for nothing else to run).\n\nAlso fixed: bootstrap.sh:112 passed --deck-every without --review-every, so its 'next turn would be' preview predicted a type the supervisor would not pick.\n\nGATE: make test 96 OK (14 new), make all green (301 claims), router.gates GREEN 4 pass / 2 warn / 0 fail. No claims.json key added -- this is loop infrastructure and quotes no export number, so no number-verifier. Files: loop/backlog.py, tests/test_backlog_plan.py, loop/README.md, loop/config.env, loop/bootstrap.sh, docs/DECISIONS.md (ADR-013)."
       }
     ]
   },
