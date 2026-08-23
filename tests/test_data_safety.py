@@ -16,6 +16,14 @@ WHAT THIS CHECKS
     3. No file the repo tracks -- or would track, i.e. untracked and not
        gitignored -- matches an `X-Amz-Signature` pattern. Presigned S3 URLs
        are the classic way a credential escapes through a pasted log line.
+    4. No tracked file carries a concrete redaction serial that is not on a
+       short, justified allowlist. The serial does not have to be attached with
+       an underscore -- see RepoSourceCarriesNoExportContent, and
+       ConcretePlaceholderShapes, which tests the pattern rather than the repo.
+    5. No tracked file carries an opaque-looking identifier that also occurs in
+       the export. This is the shape-free check: checks 1 and 4 both match a
+       KNOWN placeholder shape, and a raw un-redacted vendor id has no shape.
+       See RepoCarriesNoOpaqueExportToken.
 
 WHY THE PII_ RULE IS NOT COSMETIC
     PII_ tokens are renumbered PER REQUEST. `PII_URL_3` in one line and
@@ -28,7 +36,8 @@ WHAT IT WRITES
     prints only counts and file paths -- never the matched text.
 
 RUNTIME
-    ~10 s, dominated by the shingle scan over the largest results/ file.
+    ~13 s: the shingle scan over the largest results/ file, plus one streamed
+    pass over the export for the opaque-token check.
 """
 
 from __future__ import annotations
@@ -261,11 +270,40 @@ class RepoSourceCarriesNoExportContent(unittest.TestCase):
     is the one trigger value router/features.py had to classify). What it may not
     do is carry an unexplained concrete placeholder, which would mean a slice of
     a real trajectory was pasted in.
+
+    THE SERIAL IS NOT ALWAYS ATTACHED WITH AN UNDERSCORE
+        The first version of this pattern required a trailing `_<digits>`, so a
+        serial written in any other shorthand walked straight past it.
+        loop/JOURNAL.md carried exactly that -- the prefix, a slash, then the
+        digits -- from commit 5082319 until c05e078, surviving the turn-1
+        cleanup that docs/DATA-SAFETY-DEBT.md records as complete. The value it
+        encoded occurs in the export in the thousands.
+
+        So the pattern now accepts up to two non-alphanumeric characters between
+        the prefix and the serial, and NORMALISES what it finds back to the
+        underscore form before comparing it to DOCUMENTARY. One allowlist entry
+        therefore covers every spelling of the same placeholder, which is what
+        keeps the allowlist inside its cap of 8.
     """
 
-    #: A concrete placeholder is one ending in a per-request serial number.
-    CONCRETE_PII = re.compile(r"PII_[A-Z]+(?:_[A-Z]+)*_\d+")
-    CONCRETE_ENTITY = re.compile(r"<ENTITY_[A-Z]+(?:_[A-Z]+)*_\d+>")
+    #: A concrete placeholder is a prefix, then up to two non-alphanumeric
+    #: characters, then a per-request serial. The separator class excludes
+    #: WHITESPACE on purpose, and that exclusion was measured rather than
+    #: guessed: with whitespace allowed, this very file failed itself, because a
+    #: docstring sentence of the form "<prefix>, 3 of them" reads as a serial.
+    #: A serial is written ATTACHED to its prefix -- `_12`, `/12`, `-12`, `:12`,
+    #: `.12` -- so requiring attachment costs no real coverage and drops the
+    #: whole prose false-positive class.
+    SERIAL_SEP = r"[^\sA-Za-z0-9]{0,2}"
+    CONCRETE_PII = re.compile(r"(PII_[A-Z]+(?:_[A-Z]+)*)" + SERIAL_SEP + r"(\d+)")
+    CONCRETE_ENTITY = re.compile(
+        r"(<ENTITY_[A-Z]+(?:_[A-Z]+)*)" + SERIAL_SEP + r"(\d+)>?")
+
+    @staticmethod
+    def _normalise(match, closing=""):
+        """`prefix<any separator>serial` -> the canonical `prefix_serial` form."""
+        prefix, serial = match
+        return "%s_%s%s" % (prefix, serial, closing)
 
     #: Each allowed token, with the reason it is documentary rather than data.
     DOCUMENTARY = {
@@ -295,8 +333,8 @@ class RepoSourceCarriesNoExportContent(unittest.TestCase):
                 blob = _text(path)
             except OSError:
                 continue
-            hits = set(self.CONCRETE_PII.findall(blob))
-            hits |= set(self.CONCRETE_ENTITY.findall(blob))
+            hits = {self._normalise(m) for m in self.CONCRETE_PII.findall(blob)}
+            hits |= {self._normalise(m, ">") for m in self.CONCRETE_ENTITY.findall(blob)}
             unexplained = sorted(hits - set(self.DOCUMENTARY))
             if unexplained:
                 offenders[rel] = unexplained
@@ -315,6 +353,231 @@ class RepoSourceCarriesNoExportContent(unittest.TestCase):
         for token, reason in self.DOCUMENTARY.items():
             self.assertGreater(len(reason), 20,
                                "%s is allowlisted without a real justification" % token)
+
+
+
+class ConcretePlaceholderShapes(unittest.TestCase):
+    """Unit tests for the placeholder PATTERN, not for the repo's contents.
+
+    RepoSourceCarriesNoExportContent above is a corpus test: it passes when the
+    repo happens to be clean, which it also does when the pattern is broken.
+    That is how the slash shorthand survived a cleanup that was recorded as
+    complete. These tests exercise the pattern directly, so a regression in it
+    fails here whatever the repo looks like.
+
+    Every probe is assembled at runtime from a prefix and a serial that are
+    written separately in this file, so the file itself never carries a concrete
+    placeholder for the corpus test above to find. The prefix is invented: it
+    occurs 0 times in the export (measured), which is what makes it a probe
+    rather than a sample.
+    """
+
+    CLS = RepoSourceCarriesNoExportContent
+    PROBE = "PII_PROBE"
+    ENTITY_PROBE = "<ENTITY_PROBE"
+
+    #: The shorthands a human actually writes. The slash is the one that reached
+    #: main in commit 5082319 and was removed in c05e078.
+    ATTACHED_SEPARATORS = ("_", "/", "-", ":", ".", "#", "/-", "::")
+
+    def _pii(self, text):
+        return {self.CLS._normalise(m) for m in self.CLS.CONCRETE_PII.findall(text)}
+
+    def _entity(self, text):
+        return {self.CLS._normalise(m, ">")
+                for m in self.CLS.CONCRETE_ENTITY.findall(text)}
+
+    def test_the_underscore_form_still_matches(self):
+        self.assertEqual(self._pii("see %s%s here" % (self.PROBE, "_7")),
+                         {self.PROBE + "_7"})
+
+    def test_a_serial_attached_by_any_separator_is_detected(self):
+        """The i0011 regression: `_<digits>` was not the only spelling in use."""
+        missed = [sep for sep in self.ATTACHED_SEPARATORS
+                  if not self._pii("prefix %s%s%s tail" % (self.PROBE, sep, "7"))]
+        self.assertEqual(missed, [],
+                         "these separators hide a serial from the detector: %s" % missed)
+
+    def test_normalisation_collapses_every_separator_to_one_token(self):
+        """One DOCUMENTARY entry must cover every spelling, or the cap of 8 breaks."""
+        found = set()
+        for sep in self.ATTACHED_SEPARATORS:
+            found |= self._pii("%s%s%s" % (self.PROBE, sep, "7"))
+        self.assertEqual(found, {self.PROBE + "_7"},
+                         "separators normalise to more than one token: %s"
+                         % sorted(len(t) for t in found))
+
+    def test_a_pattern_name_without_a_serial_is_not_a_placeholder(self):
+        """`PII_URL_N` names the shape; it carries no per-request value."""
+        self.assertEqual(self._pii("%s_N and %s_M are renumbered per request"
+                                   % (self.PROBE, self.PROBE)), set())
+
+    def test_a_number_separated_by_whitespace_is_prose_not_a_serial(self):
+        """Measured carve-out: without it this file failed on its own docstring."""
+        for text in ("%s, 3 of them", "%s appears 306 times", "%s and 12 others"):
+            self.assertEqual(self._pii(text % self.PROBE), set(), text)
+
+    def test_the_entity_shorthand_matches_and_keeps_its_bracket(self):
+        for sep in ("_", "/"):
+            self.assertEqual(self._entity("%s%s%s>" % (self.ENTITY_PROBE, sep, "7")),
+                             {self.ENTITY_PROBE + "_7>"})
+
+    def test_every_documentary_entry_is_written_in_normalised_form(self):
+        """An allowlist entry the detector cannot reproduce would never match."""
+        for token in self.CLS.DOCUMENTARY:
+            found = self._entity(token) if token.startswith("<") else self._pii(token)
+            self.assertEqual(found, {token},
+                             "%s does not round-trip through the detector" % token)
+
+
+class RepoCarriesNoOpaqueExportToken(unittest.TestCase):
+    """No opaque-looking identifier in a repo file may occur in the export.
+
+    WHY THIS EXISTS
+        Every other placeholder check in this file matches a SHAPE -- `PII_...`
+        or `<ENTITY_...>`. A raw, un-redacted identifier copied straight out of
+        a trajectory has no shape to match, and that is exactly how three of
+        them reached a shared repository on night one. This test needs no shape.
+        It pulls every opaque-looking token out of every repo file and asks the
+        export whether it knows it. A token the export knows came from the
+        export.
+
+    WHAT COUNTS AS OPAQUE
+        A maximal run of [A-Za-z0-9_-], 16 to 64 characters, mixing letters and
+        digits. Maximal matters: `data:...;base64,` payloads are stripped first,
+        because presentation.html inlines a 577 KB matplotlib PNG whose `+` and
+        `/` bytes otherwise shatter it into ~9000 fragments of exactly this
+        shape. With the strip in place the whole repo yields ~24 candidates,
+        which is small enough to scan the 101 MB export against directly.
+
+    WHAT IS STRUCTURALLY EXEMPT
+        The arm identifiers in router.pricing.OBSERVED_ARMS. They are the
+        study's unit of analysis, they are pinned in docs/CONTRACTS.md, and they
+        are already anonymized per AGENTS.md -- one of them is 17 characters and
+        occurs in the export by construction. This tracks the arm table rather
+        than being an allowlist, so it cannot silently grow.
+
+    WHAT IT PRINTS ON FAILURE
+        The repo path, how many tokens matched, and a MASKED shape (letters ->
+        a/A, digits -> #). Never the token. The token is the leak.
+
+    RUNTIME
+        ~3 s: one streamed pass over the export per 8 MB chunk.
+    """
+
+    OPAQUE_RE = re.compile(r"(?<![A-Za-z0-9_-])[A-Za-z0-9_-]{16,64}(?![A-Za-z0-9_-])")
+    DATA_URI_RE = re.compile(r"data:[A-Za-z0-9.+/-]*;base64,[A-Za-z0-9+/=\s]+")
+    CHUNK = 8 * 1024 * 1024
+    MAX_FILE = 16 * 1024 * 1024
+
+    @classmethod
+    def setUpClass(cls):
+        if not os.path.isdir(EXPORT):
+            raise unittest.SkipTest("export/ is not present")
+        cls.paths = RepoCarriesNoPresignedSignature._repo_files()
+        if cls.paths is None:
+            raise unittest.SkipTest("git is unavailable; cannot enumerate repo files")
+        cls.exempt = cls._exempt_arm_ids()
+        cls.candidates = cls._candidates(cls.paths, cls.exempt)
+        cls.known = cls._which_occur_in_export(set(cls.candidates))
+
+    @staticmethod
+    def _exempt_arm_ids():
+        """The observed arm identifiers, read from the pricing table, not copied."""
+        try:
+            from router.pricing import OBSERVED_ARMS
+        except Exception:                       # pragma: no cover - import guard
+            return frozenset()
+        return frozenset(OBSERVED_ARMS)
+
+    @classmethod
+    def _opaque(cls, blob):
+        blob = cls.DATA_URI_RE.sub(" ", blob)
+        return {t for t in cls.OPAQUE_RE.findall(blob)
+                if any(c.isdigit() for c in t) and any(c.isalpha() for c in t)}
+
+    @classmethod
+    def _candidates(cls, paths, exempt):
+        """token -> the repo files carrying it."""
+        out = {}
+        for rel in paths:
+            path = os.path.join(REPO_ROOT, rel)
+            if not os.path.isfile(path) or os.path.getsize(path) > cls.MAX_FILE:
+                continue
+            try:
+                blob = _text(path)
+            except OSError:
+                continue
+            for token in cls._opaque(blob) - exempt:
+                out.setdefault(token, set()).add(rel)
+        return out
+
+    @classmethod
+    def _which_occur_in_export(cls, tokens):
+        """Stream every export file once; return the subset the export contains."""
+        found = set()
+        pending = set(tokens)
+        if not pending:
+            return found
+        overlap = 64
+        for root, _dirs, names in os.walk(EXPORT):
+            for name in sorted(names):
+                with open(os.path.join(root, name), "rb") as fh:
+                    tail = ""
+                    while pending:
+                        raw = fh.read(cls.CHUNK)
+                        if not raw:
+                            break
+                        window = tail + raw.decode("latin-1")
+                        for token in list(pending):
+                            if token in window:
+                                found.add(token)
+                                pending.discard(token)
+                        tail = window[-overlap:]
+        return found
+
+    @staticmethod
+    def _mask(token):
+        """Shape only: letters collapse to a/A, digits to #. Safe to print."""
+        return "".join("#" if c.isdigit() else "a" if c.islower()
+                       else "A" if c.isupper() else c for c in token)
+
+    def test_the_candidate_set_is_non_trivial(self):
+        """A detector that finds nothing to check is not evidence of anything."""
+        self.assertGreaterEqual(
+            len(self.candidates), 5,
+            "only %d opaque tokens extracted from %d repo files; the extractor is "
+            "probably broken, not the repo clean" % (len(self.candidates), len(self.paths)))
+
+    def test_the_export_scan_finds_a_token_that_is_really_there(self):
+        """Negative control. Without it a scanner that always returns nothing passes."""
+        from router.io import iter_lines
+
+        probe = None
+        for _idx, req in iter_lines():
+            for token in sorted(self._opaque(json.dumps(req))):
+                if token not in self.exempt:
+                    probe = token
+                    break
+            if probe:
+                break
+        if probe is None:
+            raise unittest.SkipTest("no opaque token found in the export to probe with")
+        self.assertEqual(self._which_occur_in_export({probe}), {probe},
+                         "the export scan missed a token taken straight out of the "
+                         "export (shape %s)" % self._mask(probe))
+
+    def test_no_repo_file_carries_a_token_the_export_knows(self):
+        offenders = {}
+        for token in sorted(self.known):
+            for rel in sorted(self.candidates[token]):
+                offenders.setdefault(rel, []).append(self._mask(token))
+        self.assertEqual(
+            offenders, {},
+            "opaque tokens in repo files that also occur in the export -- shapes "
+            "only, never the value. Each is a raw identifier copied out of a "
+            "trajectory unless it is an arm id, and arm ids are already exempt. "
+            "Offenders: %s" % offenders)
 
 
 if __name__ == "__main__":
