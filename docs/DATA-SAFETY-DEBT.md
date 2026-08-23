@@ -24,6 +24,12 @@ redaction placeholder serials.
 
 **Why it matters.** `AGENTS.md`: challenge use only, no redistribution. A push is redistribution.
 
+**Working tree, turn 7.** The paragraph was rewritten on `text-classifier-finetune` to describe the
+shape of both problems instead of quoting either -- no identifier and no serial survives in the file.
+`tests.test_data_safety` passes on that branch. This closes the *tree*, not the *history*: commit
+`24e7469` is still on `origin` and still carries the original paragraph, so item 1 stays open here
+until `i0006` is executed by a human.
+
 ### 2. Loop bookkeeping — placeholder serials
 
 **Where.** Commit `5082319` on `main`, which introduced them; removed again in `8257642`. Both
