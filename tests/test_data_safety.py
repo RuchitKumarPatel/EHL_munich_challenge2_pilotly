@@ -35,9 +35,17 @@ WHAT IT WRITES
     Nothing. It reads results/, the export and the repo's own source files, and
     prints only counts and file paths -- never the matched text.
 
+HOW THE PUSH GATE RUNS IT
+    `python -m tests.test_data_safety`, never `python -m unittest`. The gate
+    runner at the bottom prints a RECEIPT saying how many files were enumerated
+    and how many tests ran, because `unittest` exits 0 when everything skips and
+    the gate used to read that as "this branch is clean". See STRICT, RECEIPT
+    and ADR-015.
+
 RUNTIME
     ~13 s: the shingle scan over the largest results/ file, plus one streamed
-    pass over the export for the opaque-token check.
+    pass over the export for the opaque-token check. A per-ref scan is ~4.6 s --
+    only the REF_AWARE classes run there.
 """
 
 from __future__ import annotations
@@ -50,7 +58,10 @@ import unittest
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RESULTS = os.path.join(REPO_ROOT, "results")
-EXPORT = os.path.join(REPO_ROOT, "export")
+#: Overridable only so a test can point the export-backed checks at a directory
+#: that is deliberately empty and watch them go RED instead of skipping. Nothing
+#: in the pipeline sets it.
+EXPORT = os.environ.get("DATA_SAFETY_EXPORT_DIR") or os.path.join(REPO_ROOT, "export")
 
 #: When set to a git ref, the two repo-file checks read that ref's tree instead
 #: of the working tree. The loop's push gate uses this to scan each branch it is
@@ -59,6 +70,31 @@ EXPORT = os.path.join(REPO_ROOT, "export")
 #: The generated-artifact and export-shingle checks are unaffected -- those are
 #: working-tree concerns and neither directory is tracked.
 SCAN_REF = os.environ.get("DATA_SAFETY_SCAN_REF", "").strip()
+
+#: STRICT means "the push gate is asking". A detector that cannot run is then a
+#: RED answer, never a skipped one.
+#:
+#: WHY THIS EXISTS. `unittest` exits 0 when every test skips, and the gate read
+#: only that exit code. So `DATA_SAFETY_SCAN_REF=refs/heads/no-such-branch`
+#: printed `OK (skipped=6)` and the branch was pronounced clean having
+#: enumerated zero files -- and then pushed. Any git error reached the same
+#: place: a dropped object, a ref deleted between enumeration and scan, a name
+#: git refuses to parse. The same shape sat in the opaque-token detector, which
+#: skipped outright when `export/` was absent, so on a machine without the
+#: export the headline raw-identifier check was inert and green.
+#:
+#: An environmental excuse ("git is unavailable", "the export is not here") is
+#: plausible on a developer laptop and is never plausible for a ref the gate
+#: just enumerated from `for-each-ref`. Under STRICT those raise.
+STRICT = bool(SCAN_REF) or os.environ.get("DATA_SAFETY_STRICT", "").strip() == "1"
+
+#: Set by `_repo_files` so the gate receipt can report how many files the scan
+#: actually looked at. `files=0` and a green exit code is the fail-open above.
+ENUMERATED = {"n": 0}
+
+
+class ScanCannotRun(RuntimeError):
+    """A detector could not run. Under STRICT this is RED, not a skip."""
 
 PII_RE = re.compile(r"PII_[A-Z][A-Z0-9_]*")
 ENTITY_RE = re.compile(r"<ENTITY_[^>]*>")
@@ -73,6 +109,21 @@ PII_ALLOWED_FILE = "jobkey.jsonl"
 SHINGLE = 64
 MAX_SHINGLES = 1200
 OUTPUT_TYPES = ("function_call_output", "custom_tool_call_output")
+
+
+def _require_export():
+    """RED under STRICT when the export is not readable; a skip otherwise.
+
+    The export is the ground truth both content checks compare against. Without
+    it they answer "no leak found" for the same reason an unplugged smoke alarm
+    is silent, and the push gate cannot tell those two apart from the outside.
+    """
+    if os.path.isdir(EXPORT) and any(os.scandir(EXPORT)):
+        return
+    msg = "export/ is not present at %s" % _rel(EXPORT)
+    if STRICT:
+        raise ScanCannotRun(msg + "; the export-backed checks cannot run")
+    raise unittest.SkipTest(msg)
 
 
 def _results_files():
@@ -188,10 +239,11 @@ class ResultsCarryNoRawToolOutput(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        if not os.path.isdir(EXPORT):
-            raise unittest.SkipTest("export/ is not present")
+        _require_export()
         cls.files = _results_files()
         if not cls.files:
+            # Unlike a missing export this is not an inert detector: nothing has
+            # been generated, so there is nothing that could carry export text.
             raise unittest.SkipTest("results/ is empty; run `python -m router.cli all`")
         cls.shingles = cls._shingles()
 
@@ -253,10 +305,18 @@ class RepoCarriesNoPresignedSignature(unittest.TestCase):
         Under SCAN_REF this is the ref's tree instead. There is no untracked half
         there and that is correct: an unpushed working-tree file cannot reach the
         remote through a ref, and the working-tree scan still covers it.
+
+        Under STRICT a git failure raises `ScanCannotRun` instead of returning
+        None, and so does an empty listing. Returning None made every content
+        check skip, and a suite in which everything skips exits 0 -- which the
+        push gate read as "this branch is clean". An empty listing is the same
+        fail-open reached by a different route: a ref that resolves to an empty
+        tree has nothing to scan and must not be mistaken for a ref with nothing
+        wrong in it.
         """
         paths = []
         if SCAN_REF:
-            listings = [["git", "ls-tree", "-r", "--name-only", "-z", SCAN_REF]]
+            listings = [["git", "ls-tree", "-r", "--name-only", "-z", SCAN_REF, "--"]]
         else:
             listings = [["git", "ls-files", "-z"],
                         ["git", "ls-files", "--others", "--exclude-standard", "-z"]]
@@ -264,10 +324,21 @@ class RepoCarriesNoPresignedSignature(unittest.TestCase):
             try:
                 raw = subprocess.run(args, cwd=REPO_ROOT, capture_output=True,
                                      check=True).stdout
-            except (OSError, subprocess.CalledProcessError):
+            except (OSError, subprocess.CalledProcessError) as exc:
+                if STRICT:
+                    raise ScanCannotRun(
+                        "cannot enumerate repo files for %s: %s"
+                        % (SCAN_REF or "the working tree", exc))
+                ENUMERATED["n"] = 0
                 return None
             paths.extend(n.decode("utf-8", "replace") for n in raw.split(b"\0") if n)
-        return sorted(set(paths))
+        paths = sorted(set(paths))
+        if STRICT and not paths:
+            raise ScanCannotRun(
+                "enumerated 0 files for %s; refusing to call that clean"
+                % (SCAN_REF or "the working tree"))
+        ENUMERATED["n"] = len(paths)
+        return paths
 
     def test_git_listing_is_available(self):
         if self.paths is None:
@@ -515,8 +586,7 @@ class RepoCarriesNoOpaqueExportToken(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        if not os.path.isdir(EXPORT):
-            raise unittest.SkipTest("export/ is not present")
+        _require_export()
         cls.paths = RepoCarriesNoPresignedSignature._repo_files()
         if cls.paths is None:
             raise unittest.SkipTest("git is unavailable; cannot enumerate repo files")
@@ -626,5 +696,47 @@ class RepoCarriesNoOpaqueExportToken(unittest.TestCase):
             "Offenders: %s" % offenders)
 
 
+#: Under SCAN_REF only these run. The other two classes are working-tree
+#: concerns -- generated artifacts and untracked files -- and neither can travel
+#: through a ref; running them once per branch re-walked the export for nothing.
+REF_AWARE = ("RepoCarriesNoPresignedSignature",
+             "RepoSourceCarriesNoExportContent",
+             "ConcretePlaceholderShapes",
+             "RepoCarriesNoOpaqueExportToken")
+
+#: The receipt. `loop/push_gate.sh` refuses a branch when this line is absent,
+#: when `files` is 0, when `ran` is 0, or when `failed` is not 0 -- so a scan
+#: that skipped everything can no longer read as a clean branch. Only the gate
+#: runner below prints it; `python -m unittest` never does, and the gate does
+#: not accept that invocation.
+RECEIPT = "DATA-SAFETY-RECEIPT ref=%s files=%d ran=%d skipped=%d failed=%d"
+
+
+def run_as_gate(stream=None):
+    """Run the suite and print a machine-readable receipt. Returns an exit code.
+
+    `python -m unittest` exits 0 when every test skips, which is how a branch
+    that enumerated zero files was reported clean. The receipt closes that: the
+    caller checks what the scan actually did, not only whether it complained.
+    """
+    import sys
+
+    stream = stream or sys.stderr
+    loader = unittest.TestLoader()
+    module = sys.modules[__name__]
+    if SCAN_REF:
+        suite = unittest.TestSuite(
+            loader.loadTestsFromTestCase(getattr(module, name)) for name in REF_AWARE)
+    else:
+        suite = loader.loadTestsFromModule(module)
+    result = unittest.TextTestRunner(stream=stream, verbosity=2).run(suite)
+    failed = len(result.failures) + len(result.errors)
+    print(RECEIPT % (SCAN_REF or "worktree", ENUMERATED["n"], result.testsRun,
+                     len(result.skipped), failed), flush=True)
+    return 0 if result.wasSuccessful() else 1
+
+
 if __name__ == "__main__":
-    unittest.main(verbosity=2)
+    import sys
+
+    sys.exit(run_as_gate())

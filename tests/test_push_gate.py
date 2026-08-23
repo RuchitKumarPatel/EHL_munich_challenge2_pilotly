@@ -35,10 +35,17 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# Running this file directly puts tests/ on sys.path, not the repo root, so
+# `from tests import test_data_safety` below would fail where discovery succeeds.
+# Direct execution has to collect and pass exactly what discovery does; see
+# TheCollectedSuiteIsTheSameBothWays.
+if REPO_ROOT not in sys.path:
+    sys.path.insert(0, REPO_ROOT)
 PUSH_GATE = os.path.join(REPO_ROOT, "loop", "push_gate.sh")
 
 #: Assembled, never written literally: this file is itself scanned by the suite
@@ -161,23 +168,35 @@ class PushGateRefusesOnlyTheDirtyBranch(unittest.TestCase):
     def _stub_scanner(self):
         """Stands in for the real suite: a ref whose tree carries the marker is red."""
         path = os.path.join(self.tmp, "stub-scan.sh")
+        return self._write_stub(
+            'ref="${DATA_SAFETY_SCAN_REF:-}"\n'
+            'if [ -z "$ref" ]; then\n'
+            '  echo "DATA-SAFETY-RECEIPT ref=worktree files=3 ran=9 skipped=0 failed=0"\n'
+            "  exit 0\n"
+            "fi\n"
+            'if git grep -q %s "$ref" --; then\n'
+            '  echo "DATA-SAFETY-RECEIPT ref=$ref files=3 ran=9 skipped=0 failed=1"\n'
+            "  exit 1\n"
+            "fi\n"
+            'echo "DATA-SAFETY-RECEIPT ref=$ref files=3 ran=9 skipped=0 failed=0"\n'
+            "exit 0\n" % STUB_MARKER)
+
+    def _write_stub(self, body, name="stub-scan.sh"):
+        """A stand-in for `$PY -m tests.test_data_safety`, receipt and all."""
+        path = os.path.join(self.tmp, name)
         with open(path, "w") as fh:
-            fh.write("#!/usr/bin/env bash\n"
-                     'ref="${DATA_SAFETY_SCAN_REF:-}"\n'
-                     '[ -z "$ref" ] && exit 0\n'
-                     'git grep -q %s "$ref" -- && exit 1\n'
-                     "exit 0\n" % STUB_MARKER)
+            fh.write("#!/usr/bin/env bash\n" + body)
         os.chmod(path, 0o755)
         return path
 
-    def _run_gate(self):
+    def _run_gate(self, scanner=None):
         script = ('set -uo pipefail\n'
                   'ROOT="$1"; source "$ROOT/loop/push_gate.sh"\n'
                   'push_all_branches\n')
         logdir = os.path.join(self.tmp, "logs")
         os.makedirs(logdir, exist_ok=True)
         env = dict(os.environ,
-                   PY=self._stub_scanner(), REMOTE="origin", PUSH="1",
+                   PY=scanner or self._stub_scanner(), REMOTE="origin", PUSH="1",
                    INTEGRATION_BRANCH="main", DIVERGED="0", LOGDIR=logdir)
         return subprocess.run(["bash", "-c", script, "gate", self.work],
                               cwd=self.work, capture_output=True, text=True, env=env)
@@ -210,6 +229,164 @@ class PushGateRefusesOnlyTheDirtyBranch(unittest.TestCase):
         proc = self._run_gate()
         self.assertIn("dirty-b", proc.stdout + proc.stderr,
                       "a silently skipped branch is indistinguishable from a pushed one")
+
+
+class TheGateRefusesAScanThatDidNotRun(unittest.TestCase):
+    """A scanner that skipped everything must not read as a clean branch.
+
+    THE BUG THIS PINS. `python -m unittest` exits 0 when every test skips, and
+    every content check in tests/test_data_safety.py skipped whenever it could
+    not enumerate files. `DATA_SAFETY_SCAN_REF=refs/heads/no-such-branch` printed
+    `OK (skipped=6)` and exited 0, so the gate -- which read only that exit code
+    -- pushed the branch having scanned nothing. Any git error reached the same
+    place: a deleted ref, a dropped object, a name git refuses to parse.
+
+    These cases drive the REAL push_gate.sh against a real local remote with
+    stub scanners standing in for the suite, and assert on what LANDED on the
+    remote rather than on what the gate printed.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        if not _have_git():
+            raise unittest.SkipTest("git is unavailable")
+        if not os.path.isfile(PUSH_GATE):
+            raise unittest.SkipTest("loop/push_gate.sh is not present")
+        if shutil.which("bash") is None:
+            raise unittest.SkipTest("bash is unavailable")
+
+    setUp = PushGateRefusesOnlyTheDirtyBranch.setUp
+    _commit = PushGateRefusesOnlyTheDirtyBranch._commit
+    _stub_scanner = PushGateRefusesOnlyTheDirtyBranch._stub_scanner
+    _write_stub = PushGateRefusesOnlyTheDirtyBranch._write_stub
+    _run_gate = PushGateRefusesOnlyTheDirtyBranch._run_gate
+    _on_remote = PushGateRefusesOnlyTheDirtyBranch._on_remote
+
+    #: Exit 0 and no receipt at all -- the shape of `unittest` skipping the lot.
+    SILENT_GREEN = "exit 0\n"
+
+    #: Exit 0 with a receipt admitting it enumerated nothing.
+    ZERO_FILES = ('ref="${DATA_SAFETY_SCAN_REF:-worktree}"\n'
+                  'echo "DATA-SAFETY-RECEIPT ref=$ref files=0 ran=6 skipped=6 failed=0"\n'
+                  "exit 0\n")
+
+    #: Exit 0 with a receipt admitting it ran nothing.
+    ZERO_TESTS = ('ref="${DATA_SAFETY_SCAN_REF:-worktree}"\n'
+                  'echo "DATA-SAFETY-RECEIPT ref=$ref files=126 ran=0 skipped=0 failed=0"\n'
+                  "exit 0\n")
+
+    def test_a_scanner_that_prints_no_receipt_pushes_nothing(self):
+        proc = self._run_gate(self._write_stub(self.SILENT_GREEN))
+        self.assertEqual(self._on_remote(), set(),
+                         "a scan with no receipt must not let any branch out\n%s"
+                         % (proc.stdout + proc.stderr))
+
+    def test_a_receipt_reporting_zero_files_pushes_nothing(self):
+        proc = self._run_gate(self._write_stub(self.ZERO_FILES))
+        self.assertEqual(self._on_remote(), set(),
+                         "enumerating zero files is not the same as finding nothing\n%s"
+                         % (proc.stdout + proc.stderr))
+
+    def test_a_receipt_reporting_zero_tests_pushes_nothing(self):
+        proc = self._run_gate(self._write_stub(self.ZERO_TESTS))
+        self.assertEqual(self._on_remote(), set(),
+                         "running zero tests is not the same as passing them\n%s"
+                         % (proc.stdout + proc.stderr))
+
+    def test_the_honest_scanner_still_pushes_the_clean_branches(self):
+        # Negative control. Without it the three cases above are satisfied by a
+        # gate that refuses everything, which would be useless rather than safe.
+        self._run_gate()
+        self.assertEqual(self._on_remote() & {"clean-a", "clean-c", "dirty-b"},
+                         {"clean-a", "clean-c"})
+
+    def test_the_refusal_names_the_log(self):
+        proc = self._run_gate(self._write_stub(self.SILENT_GREEN))
+        self.assertIn("data-safety", proc.stdout + proc.stderr,
+                      "a refusal the operator cannot trace is only half a refusal")
+
+
+class TheSuiteFailsClosedWhenItCannotRun(unittest.TestCase):
+    """The real suite, driven the way the gate drives it.
+
+    The class above proves the GATE refuses a scan that did not run. This one
+    proves the SUITE tells it so -- that an unresolvable ref, and a missing
+    export, produce a non-zero exit and an honest receipt instead of a green
+    skip. Both halves are needed: either one alone leaves the fail-open intact.
+    """
+
+    #: Resolvable by nothing. Deliberately not a sha, so `git ls-tree` errors.
+    DEAD_REF = "refs/heads/zz-no-such-branch-for-the-data-safety-gate"
+
+    @classmethod
+    def setUpClass(cls):
+        if not _have_git():
+            raise unittest.SkipTest("git is unavailable")
+
+    def _run(self, env_extra):
+        env = dict(os.environ, **env_extra)
+        env.pop("DATA_SAFETY_SCAN_REF", None)
+        env.pop("DATA_SAFETY_STRICT", None)
+        env.pop("DATA_SAFETY_EXPORT_DIR", None)
+        env.update(env_extra)
+        return subprocess.run([os.environ.get("PYTHON", ".venv/bin/python"),
+                               "-m", "tests.test_data_safety"],
+                              cwd=REPO_ROOT, capture_output=True, text=True, env=env)
+
+    @staticmethod
+    def _receipt(proc):
+        for line in (proc.stdout + proc.stderr).splitlines():
+            if line.startswith("DATA-SAFETY-RECEIPT "):
+                return dict(part.split("=", 1) for part in line.split()[1:])
+        return None
+
+    def test_an_unresolvable_ref_exits_non_zero(self):
+        proc = self._run({"DATA_SAFETY_SCAN_REF": self.DEAD_REF})
+        self.assertNotEqual(proc.returncode, 0,
+                            "a ref the scan cannot read must be RED, not OK (skipped=n)"
+                            "\n%s" % (proc.stdout + proc.stderr)[-2000:])
+
+    def test_an_unresolvable_ref_admits_it_enumerated_nothing(self):
+        proc = self._run({"DATA_SAFETY_SCAN_REF": self.DEAD_REF})
+        receipt = self._receipt(proc)
+        self.assertIsNotNone(receipt, "the gate runner must always print a receipt")
+        self.assertEqual(receipt["files"], "0")
+        self.assertNotEqual(receipt["failed"], "0")
+
+    def test_a_real_ref_is_green_and_says_what_it_looked_at(self):
+        # Negative control for both cases above.
+        proc = self._run({"DATA_SAFETY_SCAN_REF": "HEAD"})
+        self.assertEqual(proc.returncode, 0,
+                         "HEAD's own tree must scan clean:\n%s"
+                         % (proc.stdout + proc.stderr)[-2000:])
+        receipt = self._receipt(proc)
+        self.assertIsNotNone(receipt)
+        self.assertGreater(int(receipt["files"]), 0)
+        self.assertGreater(int(receipt["ran"]), 0)
+        self.assertEqual(receipt["skipped"], "0",
+                         "nothing may skip under a ref scan; a skip is the fail-open")
+
+    def test_a_missing_export_is_red_under_strict(self):
+        empty = tempfile.mkdtemp(prefix="no-export-")
+        self.addCleanup(shutil.rmtree, empty, True)
+        proc = self._run({"DATA_SAFETY_STRICT": "1", "DATA_SAFETY_EXPORT_DIR": empty})
+        self.assertNotEqual(proc.returncode, 0,
+                            "an inert export-backed detector is indistinguishable from "
+                            "a clean repo, so under the gate it must be RED\n%s"
+                            % (proc.stdout + proc.stderr)[-2000:])
+
+    def test_a_missing_export_still_only_skips_outside_the_gate(self):
+        # A developer laptop without the 101 MB export must still get a green
+        # `make test`. STRICT is what separates the two, and it is set by the
+        # gate and by nothing else.
+        empty = tempfile.mkdtemp(prefix="no-export-")
+        self.addCleanup(shutil.rmtree, empty, True)
+        proc = self._run({"DATA_SAFETY_EXPORT_DIR": empty})
+        self.assertEqual(proc.returncode, 0,
+                         "outside the gate a missing export is a skip, not a failure\n%s"
+                         % (proc.stdout + proc.stderr)[-2000:])
+        receipt = self._receipt(proc)
+        self.assertGreater(int(receipt["skipped"]), 0)
 
 
 class EverySupervisorPushPathUsesTheGate(unittest.TestCase):
@@ -254,8 +431,46 @@ class EverySupervisorPushPathUsesTheGate(unittest.TestCase):
         self.assertRegex(body, r"die \"the data-safety gate refused")
 
 
-if __name__ == "__main__":
-    unittest.main(verbosity=2)
+class TheCollectedSuiteIsTheSameBothWays(unittest.TestCase):
+    """`python tests/test_push_gate.py` must run what `-m unittest` runs.
+
+    The `__main__` guard used to sit in the MIDDLE of this file, above
+    OpaqueTokenScanIsRefAware, so direct execution exited before that class was
+    defined and reported OK having never run the cases that pin the ref-aware
+    fix. Discovery collected them, so nothing was ever red.
+
+    Checked against the parse tree rather than by searching the text: the
+    obvious `source.index('if __name__ ...')` matches the literal in this very
+    method and quietly measures the wrong thing.
+    """
+
+    @staticmethod
+    def _tree():
+        import ast
+
+        return ast.parse(open(os.path.abspath(__file__)).read())
+
+    def test_the_main_guard_is_below_every_test_class(self):
+        import ast
+
+        tree = self._tree()
+        classes = [n for n in tree.body if isinstance(n, ast.ClassDef)]
+        guards = [n for n in tree.body
+                  if isinstance(n, ast.If) and "__main__" in ast.dump(n.test)]
+        self.assertEqual(len(guards), 1, "expected exactly one __main__ guard")
+        self.assertGreater(
+            guards[0].lineno, max(c.lineno for c in classes),
+            "the __main__ guard must be below every test class, or direct "
+            "execution collects only the part of the file above it")
+
+    def test_every_class_in_the_file_is_actually_collected(self):
+        import ast
+
+        named = {n.name for n in self._tree().body if isinstance(n, ast.ClassDef)}
+        suite = unittest.TestLoader().loadTestsFromName("tests.test_push_gate")
+        collected = {type(t).__name__ for g in suite for t in g}
+        self.assertEqual(named - collected, set(),
+                         "classes defined but never collected: %s" % (named - collected))
 
 
 class OpaqueTokenScanIsRefAware(unittest.TestCase):
@@ -330,3 +545,10 @@ class OpaqueTokenScanIsRefAware(unittest.TestCase):
         # probe is safe to write literally only because the export never saw it.
         klass = self.mod.RepoCarriesNoOpaqueExportToken
         self.assertEqual(klass._which_occur_in_export({self.PROBE_TOKEN}), set())
+
+
+# Last in the file on purpose. It used to sit above OpaqueTokenScanIsRefAware, so
+# `python tests/test_push_gate.py` exited before that class was even defined and
+# reported OK having run none of it. Discovery collected it, so nothing was red.
+if __name__ == "__main__":
+    unittest.main(verbosity=2)

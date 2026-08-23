@@ -21,6 +21,11 @@
 #   2. Then EACH branch that the remote does not already have is scanned against
 #      ITS OWN tree, via DATA_SAFETY_SCAN_REF, before that branch is pushed. A
 #      branch that fails is skipped and named in the log; the clean ones still go.
+#   3. Both scans FAIL CLOSED. The suite prints a receipt saying how many files it
+#      enumerated, how many tests it ran and how many failed, and a branch is
+#      refused unless that receipt agrees with a green exit code. Before this, a
+#      suite in which every check skipped exited 0 and read as a clean branch --
+#      see ds_receipt_ok.
 #
 # WHAT IT STILL DOES NOT COVER  (do not read more into this than it says)
 #   - `entire/*` checkpoint refs are exempt by name -- backlog i0007.
@@ -44,24 +49,52 @@ DIVERGED="${DIVERGED:-0}"
 declare -F log     >/dev/null || log()     { printf '[%s] %s\n' "$(date '+%H:%M:%S')" "$*"; }
 declare -F journal >/dev/null || journal() { :; }
 
+# A green exit code is not enough, and that is not a hypothetical.
+# `python -m unittest` exits 0 when every test SKIPS, and every content check in
+# the suite skipped whenever it could not enumerate files. So
+# `DATA_SAFETY_SCAN_REF=refs/heads/no-such-branch` printed `OK (skipped=6)`,
+# exit 0, and this gate pushed the branch having scanned nothing. Any git error
+# reached the same place. The suite therefore prints a receipt saying what it
+# actually did, and both scans below refuse unless the receipt agrees with the
+# exit code. `-m tests.test_data_safety` (not `-m unittest`) is what prints it.
+ds_receipt_ok() {
+  local logfile="$1" line files ran failed
+  [ -r "$logfile" ] || return 1
+  line=$(grep -a '^DATA-SAFETY-RECEIPT ' "$logfile" | tail -1)
+  [ -n "$line" ] || return 1
+  files=$(printf '%s' "$line" | sed -n 's/.*[ ]files=\([0-9][0-9]*\).*/\1/p')
+  ran=$(printf '%s' "$line" | sed -n 's/.*[ ]ran=\([0-9][0-9]*\).*/\1/p')
+  failed=$(printf '%s' "$line" | sed -n 's/.*[ ]failed=\([0-9][0-9]*\).*/\1/p')
+  [ -n "$files" ] && [ -n "$ran" ] && [ -n "$failed" ] || return 1
+  [ "$files" -gt 0 ] || return 1        # enumerated nothing: not the same as clean
+  [ "$ran" -gt 0 ] || return 1          # ran nothing: not the same as clean
+  [ "$failed" = "0" ] || return 1
+  return 0
+}
+
 # The suite, against the working tree. This is the only scan that sees untracked
 # files and the generated artifacts -- neither is tracked, so neither can travel
 # through a ref, but both are how a turn notices it has made a mess.
 ds_scan_worktree() {
+  local logfile="$LOGDIR/data-safety.log"
   mkdir -p "$LOGDIR"
-  ( cd "$ROOT" && "$PY" -m unittest tests.test_data_safety ) \
-    > "$LOGDIR/data-safety.log" 2>&1
+  ( cd "$ROOT" && DATA_SAFETY_STRICT=1 "$PY" -m tests.test_data_safety ) \
+    > "$logfile" 2>&1 || return 1
+  ds_receipt_ok "$logfile"
 }
 
 # The suite, against one ref's tree. DATA_SAFETY_SCAN_REF makes the repo-file
-# checks enumerate `git ls-tree` instead of `git ls-files`; see the constant's
-# docstring in tests/test_data_safety.py.
+# checks enumerate `git ls-tree` instead of `git ls-files`, restricts the run to
+# the ref-aware classes, and implies STRICT -- so a git failure is RED rather
+# than a skip. See the constants' docstrings in tests/test_data_safety.py.
 ds_scan_ref() {
-  local ref="$1" slug
+  local ref="$1" slug logfile
   slug="${1//\//-}"
+  logfile="$LOGDIR/data-safety-$slug.log"
   mkdir -p "$LOGDIR"
-  ( cd "$ROOT" && DATA_SAFETY_SCAN_REF="$ref" "$PY" -m unittest tests.test_data_safety ) \
-    > "$LOGDIR/data-safety-$slug.log" 2>&1
+  ( cd "$ROOT" && DATA_SAFETY_SCAN_REF="$ref" "$PY" -m tests.test_data_safety ) \
+    > "$logfile" 2>&1 || return 1
+  ds_receipt_ok "$logfile"
 }
 
 # Every branch goes to the remote every turn, so nothing the night produces exists
@@ -93,7 +126,7 @@ push_all_branches() {
     [ "$local_sha" = "$remote_sha" ] && continue
 
     if ! ds_scan_ref "$br"; then
-      log "DATA SAFETY RED on $br -- refusing that branch ($LOGDIR/data-safety-${br//\//-}.log)"
+      log "DATA SAFETY RED or UNRUNNABLE on $br -- refusing that branch ($LOGDIR/data-safety-${br//\//-}.log)"
       journal "${TURN:-?}" "${TYPE:-?}" "push of $br refused: tests.test_data_safety is red on its own tree"
       refused=1
       continue

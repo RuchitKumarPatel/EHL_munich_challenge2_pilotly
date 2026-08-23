@@ -465,3 +465,60 @@ reintroduce exactly the defect this ADR closes. Until that exists, the project q
 `refusal.mde_best_powered_arm_pair.pp` is an unweighted arm-pair rate contrast — a different
 estimand on a different weighting. Asserting it would replace one untraceable comparison with
 another.
+
+## ADR-015 — A data-safety check that cannot run is RED, and the gate checks a receipt
+
+**Status.** Accepted (turn 11).
+
+**Context.** `python -m unittest` exits 0 when every test skips. Every content check in
+`tests/test_data_safety.py` skipped when it could not enumerate repo files, and
+`RepoCarriesNoOpaqueExportToken` skipped outright when `export/` was absent. `loop/push_gate.sh`
+read only the exit code. So:
+
+```
+DATA_SAFETY_SCAN_REF=refs/heads/no-such-branch python -m unittest tests.test_data_safety
+→ OK (skipped=6)    exit 0
+```
+
+and the gate pushed that branch having enumerated zero files. No exotic input was needed — a ref
+deleted at the remote between enumeration and scan, a dropped object, or a name `git` refuses to
+parse all land in the same place. On a machine without the 101 MB export the headline
+raw-identifier detector was inert and green for the same reason. This is the `i0010` fail-open
+class reappearing inside the gate written to close it.
+
+**Decision.** Two changes, and both are needed — either alone leaves the hole open.
+
+1. **The suite fails closed when the gate is asking.** `DATA_SAFETY_STRICT=1` (implied by
+   `DATA_SAFETY_SCAN_REF`) turns every environmental excuse into a failure: a git error while
+   enumerating raises, an enumeration that yields zero files raises, and an absent or empty
+   `export/` raises. Outside the gate they are still skips, so `make test` stays green on a
+   laptop without the export. The distinction is the point: "git is unavailable" is plausible on
+   a developer machine and is never plausible for a ref the gate just read out of `for-each-ref`.
+
+2. **The gate stops trusting the exit code.** The suite prints one machine-readable line —
+   `DATA-SAFETY-RECEIPT ref=… files=N ran=N skipped=N failed=N` — and `ds_receipt_ok` refuses the
+   branch when the line is absent, when `files` is 0, when `ran` is 0, or when `failed` is not 0.
+   A green exit code with nothing behind it no longer reads as a clean branch. The receipt is
+   printed only by the gate runner in the module's `__main__`, so the gate invokes
+   `python -m tests.test_data_safety`, not `python -m unittest`.
+
+**Consequences.** The ref scan now runs only the four ref-aware classes; the two working-tree
+classes cannot travel through a ref and re-walked the export once per branch for nothing. Measured
+on this repo, a per-ref scan goes 21 tests / 5.0 s to 16 tests / 4.6 s — a small saving, and
+honestly so: the opaque-token detector's own streamed pass over the export dominates and is
+genuinely per-ref, because the candidate token set differs per branch.
+
+**What this does not fix.** The 16-character floor in `RepoCarriesNoOpaqueExportToken`
+(backlog `i0018`) — a detector that now provably runs still cannot match the 11-character ids it
+was written for. And branch names still reach `git push` as bare arguments (backlog `i0023`).
+Both are recorded rather than implied away; `loop/README.md` and `docs/DATA-SAFETY-DEBT.md` name
+the first as a live limit in the same commit as this ADR, because a safety sentence that is wrong
+in the reassuring direction is what let the previous review turns stop looking.
+
+**Evidence.** `tests/test_push_gate.py::TheSuiteFailsClosedWhenItCannotRun` drives the real suite
+at an unresolvable ref and at an emptied export, both directions, and asserts the receipt.
+`TheGateRefusesAScanThatDidNotRun` drives the real `push_all_branches` against a real local
+remote with three stub scanners — no receipt, `files=0`, `ran=0` — and asserts on what LANDED on
+the remote, with the honest scanner as the negative control. Against the pre-fix code, 9 of those
+10 cases are red; the one that passes is the control asserting a missing export still only skips
+outside the gate.

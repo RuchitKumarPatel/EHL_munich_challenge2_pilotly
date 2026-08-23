@@ -83,5 +83,18 @@ record, in this file.
   attached separator, not only a trailing `_<digits>`, which is what the shorthand on line 3 of
   `loop/JOURNAL.md` exploited. Both were confirmed against a seeded leak, and both report a
   masked shape rather than the value.
+- **One of those two closures is narrower than it reads, and this is the honest statement of it.**
+  The opaque-token extractor requires a token of 16 characters, and the three identifiers whose
+  removal it was written for are 11 — so it matches none of them and would not have caught the
+  night-one incident. Backlog `i0018` lowers the floor; until it lands, the shape-free check
+  covers longer ids only and `_common.md`'s manual `grep -c` rule is still doing the work for
+  short ones.
+- **Neither detector could be trusted to have run, and that is fixed (ADR-015, backlog `i0022`).**
+  Every content check skipped when it could not enumerate files, and a suite in which everything
+  skips exits 0, so `DATA_SAFETY_SCAN_REF` pointed at an unresolvable ref printed `OK (skipped=6)`
+  and the push gate pushed that branch having scanned nothing. A missing `export/` made the
+  raw-identifier check inert the same way. Both are now red under the gate, and the gate checks a
+  receipt naming how many files were enumerated and how many tests ran rather than reading the
+  exit code alone.
 - Neither closes the *history* half of this file. The commits listed above still carry what they
   carry; a detector added today does not reach them.
