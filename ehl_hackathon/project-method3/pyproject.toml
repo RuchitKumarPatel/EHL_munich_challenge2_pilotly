@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "project-method3"
+version = "0.1.0"
+description = "Calibrated cascade router for agent trajectories: pre-decision-only routing features, split-conformal quality guarantees, propensity-weighted doubly-robust off-policy evaluation."
+requires-python = ">=3.10"
+dependencies = []
+
+[project.optional-dependencies]
+plots = ["matplotlib>=3.7"]
+dev = ["pytest>=7.0"]
+
+[tool.setuptools.packages.find]
+where = ["src"]

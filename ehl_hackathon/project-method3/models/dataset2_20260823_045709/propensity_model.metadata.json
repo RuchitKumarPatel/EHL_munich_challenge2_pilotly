@@ -1,0 +1,35 @@
+{
+  "source": "../dataset2/export",
+  "models": [
+    "claude-fable-5",
+    "claude-opus-4-8",
+    "claude-opus-5",
+    "claude-sonnet-5",
+    "gpt-5.6-luna",
+    "gpt-5.6-sol",
+    "gpt-5.6-terra",
+    "gpt-5.7-nova"
+  ],
+  "selection": {
+    "selected_l2": 0.6,
+    "validation_log_loss": 2.0219214392870293,
+    "grid": [
+      {
+        "l2": 0.02,
+        "validation_log_loss": 2.1416190403414754
+      },
+      {
+        "l2": 0.15,
+        "validation_log_loss": 2.0493939293907606
+      },
+      {
+        "l2": 0.6,
+        "validation_log_loss": 2.0219214392870293
+      },
+      {
+        "l2": 2.0,
+        "validation_log_loss": 2.022854530912946
+      }
+    ]
+  }
+}

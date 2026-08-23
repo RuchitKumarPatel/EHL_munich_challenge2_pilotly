@@ -1,0 +1,59 @@
+{
+  "alpha": 0.1,
+  "calibrators": {
+    "claude-fable-5": {
+      "alpha": 0.1,
+      "quantile": 0.529302155470343,
+      "n_calibration": 18,
+      "coverage_guaranteed": true
+    },
+    "claude-opus-4-8": {
+      "alpha": 0.1,
+      "quantile": 0.14073679827807783,
+      "n_calibration": 12,
+      "coverage_guaranteed": true
+    },
+    "claude-opus-5": {
+      "alpha": 0.1,
+      "quantile": 0.13547062458692283,
+      "n_calibration": 27,
+      "coverage_guaranteed": true
+    },
+    "claude-sonnet-5": {
+      "alpha": 0.1,
+      "quantile": 0.22554521463022975,
+      "n_calibration": 17,
+      "coverage_guaranteed": true
+    },
+    "gpt-5.6-luna": {
+      "alpha": 0.1,
+      "quantile": 0.30594625504524714,
+      "n_calibration": 21,
+      "coverage_guaranteed": true
+    },
+    "gpt-5.6-sol": {
+      "alpha": 0.1,
+      "quantile": 0.5792776255643675,
+      "n_calibration": 17,
+      "coverage_guaranteed": true
+    },
+    "gpt-5.6-terra": {
+      "alpha": 0.1,
+      "quantile": 0.334859698127006,
+      "n_calibration": 17,
+      "coverage_guaranteed": true
+    },
+    "gpt-5.7-nova": {
+      "alpha": 0.1,
+      "quantile": Infinity,
+      "n_calibration": 3,
+      "coverage_guaranteed": false
+    },
+    "__global__": {
+      "alpha": 0.1,
+      "quantile": 0.19252169372449146,
+      "n_calibration": 132,
+      "coverage_guaranteed": true
+    }
+  }
+}

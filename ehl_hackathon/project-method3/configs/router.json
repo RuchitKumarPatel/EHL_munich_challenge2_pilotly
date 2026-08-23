@@ -1,0 +1,5 @@
+{
+  "quality_floor": 0.5,
+  "minimum_support": 3.0,
+  "propensity_clip": 0.05
+}
