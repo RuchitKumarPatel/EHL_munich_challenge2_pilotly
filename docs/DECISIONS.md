@@ -465,3 +465,72 @@ reintroduce exactly the defect this ADR closes. Until that exists, the project q
 `refusal.mde_best_powered_arm_pair.pp` is an unweighted arm-pair rate contrast — a different
 estimand on a different weighting. Asserting it would replace one untraceable comparison with
 another.
+
+## ADR-017 — A branch name is untrusted input, and the push is pinned to the sha that was scanned
+
+**Status:** Accepted (turn 12)
+
+**Context.** `loop/push_gate.sh` took every name out of `git for-each-ref` and handed it
+straight to `git rev-parse` and `git push` as a bare argument, with no `--` separator
+anywhere; `tests/test_data_safety.py` did the same with `DATA_SAFETY_SCAN_REF` for
+`git ls-tree` and `git cat-file`. The reflex objection is that a branch name is not
+attacker input. In this repo it is: every turn runs an agent with `bypassPermissions` and
+unrestricted bash, and while `git branch` and `git checkout -b` refuse an option-shaped
+name, `git update-ref` does not.
+
+Measured on git 2.55, in a throwaway repository, before anything was changed:
+
+- `git update-ref 'refs/heads/--receive-pack=/tmp/x/pwn.sh' HEAD` is accepted, and
+  `for-each-ref` lists the ref.
+- `git rev-parse` echoes that name back and exits 0, so the gate's `|| continue` after
+  `rev-parse` did not catch it.
+- `git push -q origin '--receive-pack=/tmp/x/pwn.sh'` parses it as an **option** and spawns
+  the named program locally, as the operator's user. The payload ran. The push then does
+  whatever `push.default` says, so it is not a no-op either — in the gate's exact call it
+  only appeared harmless because the throwaway repo's `main` had no upstream. With an
+  upstream configured, as `main` has here, the payload fires.
+- The same name makes `git ls-tree` exit 129, which the per-ref scan reads as an
+  infrastructure error rather than as a leak — the fail-open path ADR-015 is about.
+
+Two of the four shapes the review asked for turn out to be unreachable end to end:
+`update-ref` refuses a name containing a space or a glob character, and `for-each-ref`
+warns and ignores a ref file written by hand. They are still exercised against the
+validator, because the validator must not depend on that staying true.
+
+**Decision.**
+
+1. `ds_ref_name_ok` validates every name before it becomes a git argument. It is an
+   **allowlist** — `[A-Za-z0-9._/-]`, no leading dash — with `git check-ref-format` behind
+   it as a second gate, not as the first one. check-ref-format answers a different question
+   and returns 0 for `refs/heads/--receive-pack=x`; that was measured too. A name that fails
+   stops that branch loudly and marks the cycle refused; the clean branches still push.
+2. The branch is resolved **once**, with `--end-of-options`, to a commit, and everything
+   downstream uses the sha: the scan is `DATA_SAFETY_SCAN_REF=<sha>` and the push is
+   `git push -- <sha>:refs/heads/<name>`. This closes the option shape and the
+   scan-then-push window in the same move — the gate used to scan a *name* and then push
+   whatever that name pointed at by the time the push ran.
+3. `tests/test_data_safety.py` refuses an option-shaped or whitespace-carrying
+   `DATA_SAFETY_SCAN_REF` at import rather than scanning nothing, and its git calls carry
+   separators: `--end-of-options` for `cat-file`, a trailing `--` for `ls-tree`.
+   `ls-tree` does **not** accept `--end-of-options` before the tree-ish — it silently
+   returns nothing, which is precisely the failure being defended against, so the
+   separator goes where a pathspec would.
+
+**Consequences.** A ref name that is not an ordinary branch name in this repo is never
+pushed. The cost is that a legitimately exotic name would also be refused; the negative
+control in `tests/test_push_gate.py` pins the six shapes this repo actually uses, so a
+validator that refuses everything — and therefore silently stops backing the night's work
+up — cannot pass.
+
+**Scope.** Pre-existing debt, not a regression: `main` carried the identical bare-argument
+form at `loop/run.sh:182` and `loop/bootstrap.sh:100` before the gate was extracted. The
+supervisors' other git calls take `$INTEGRATION_BRANCH` and `$BASE_BRANCH`, which come from
+`loop/config.env` and not from `for-each-ref`; they are out of scope here and untouched.
+
+**Evidence.** `tests/test_push_gate.py::BranchNamesAreValidatedBeforeTheyReachGit` (7 tests)
+and `::ScanRefIsNotHandedToGitAsAnOption` (3). The refusal test is paired with a **positive
+control** that the payload does fire when the name is a bare argument, without which the
+refusal would prove only that the throwaway repo was broken. Mutation-tested: neutering the
+character class fails 8 of the 21, and pushing by name instead of by scanned sha fails 1.
+`make test` 150 OK (main is 140), `make all` green (301 claims), `router.gates` GREEN
+4 pass / 2 warn / 0 fail, `router.verify` PASS on 44 numerals.
