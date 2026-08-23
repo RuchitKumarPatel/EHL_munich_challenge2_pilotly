@@ -10,10 +10,10 @@
 Train/test split is GROUPED BY CLUSTER (literal cron path): a job never straddles the boundary.
 Population: claude lane AND cron-triggered (558 rows, both arms present).
 """
-import sys, os, json, time, numpy as np, torch, torch.nn as nn
-SP='/tmp/claude-1000/-home-frans-Projekte-EHL-munich-challenge2-pilotly/9b068e6c-8b32-41b5-987d-3924a4317d1b/scratchpad'
-sys.path.insert(0,SP); sys.path.insert(0,f'{SP}/tc')
-sys.path.insert(0,'/home/frans/Projekte/EHL_munich_challenge2_pilotly')
+import sys, os, json, time
+from _scratch import scratch_dir, on_path
+SP=scratch_dir(); on_path(SP, f'{SP}/tc')   # resolved BEFORE transformers: see _scratch.py
+import numpy as np, torch, torch.nn as nn
 from transformers import AutoTokenizer, AutoModel
 from router.io import iter_lines
 from router.features import item_text

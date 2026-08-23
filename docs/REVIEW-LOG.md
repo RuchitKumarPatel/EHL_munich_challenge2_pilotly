@@ -180,3 +180,76 @@ unchanged. The 16-char floor buys nothing.
 The `security-reviewer` reported a mid-run system reminder about bypass-permissions
 mode as a probable prompt injection. It is **not** — it is this harness's genuine
 reminder, and it reaches subagents too. Recorded so nobody spends a turn chasing it.
+
+---
+
+## 2026-08-23 — turn 12, quality and security
+
+**Scope.** `last_review_sha` was `9680073` (the carry-forward before turn 8), so `main`'s new
+material is `9680073..main`: the turn-9 integration merge — already reviewed at turn 8 *as a
+branch*, so not re-derived — plus **`ba96b34`, the turn-10 deck rebuild, which no review had
+seen**: `presentation.html`, `router/report.py`, `router/figs.py`. Second half of the scope is the
+unmerged work, and there is a lot of it: **eight** turn-11/12 idea branches, all eight already
+merged into `idea/integrate-turn12` (24 files, +3244/−151 vs `main`). Reviewed the integration
+branch rather than the eight, in a throwaway worktree with `.venv`, the export and the generated
+artifacts symlinked in.
+
+**Gate re-run independently on the merge candidate**, not taken from its own notes: `make test`
+**230 OK** (`main` is 140), `router.gates` **GREEN** 4 pass / 2 warn / 0 fail, `router.verify`
+**PASS** on 44 numerals across 5 artifacts, per-ref data-safety scan green with receipt
+`files=133 ran=32 skipped=0 failed=0`. ADR headings run 001..022 with no duplicate number.
+
+**Seven findings filed, all accepted** (none needed `evaluate`: each either defeats a control or
+is a proven correctness gap). In priority order:
+
+| id | weight | finding |
+|----|--------|---------|
+| i0032 | **highest** | The deck's *replacement* headline is overstated the way the number it replaced was. `weights("spend")` is **estimated tokens** (`router/ope.py:171`), so "3.6% of est. spend" is a token share printed beside a dollar-denominated chart — the same 119 trajectories are **9.8%** of the `assumed_default` bill. And "no policy at this tau" is not established. |
+| i0033 | high | The push gate runs `-m tests.test_data_safety` **from the working tree** every turn, and the receipt only checks the shape of a printed line. A ten-line stub that prints a well-formed receipt makes every branch that cycle scan clean — proven end to end against a real remote. |
+| i0034 | high | `router.verify` reads a model identifier's version suffix as a signed numeral: **six of the nine arm names orphan**, three bind to an unrelated claim. Turn 15 is a deck turn. |
+| i0035 | medium | Three ways the prose gate narrows itself and still prints PASS: quote pairing across tag boundaries, the percent lookahead crossing blanked markup, an unclosed fence exiting 0. |
+| i0036 | medium | `_check_backlog` validates that `notes` is a list, never a note's shape — `render` then raises `KeyError`, exit 1 with a traceback, where the branch's own ADR-019 and tests promise exit 3 and a sentence. |
+| i0038 | medium | Two branches merged cleanly and now **three passages disagree** about whether the opaque-token detector's 16-character floor is still live; `docs/DATA-SAFETY-DEBT.md` contradicts itself 63 lines apart. The i0026 class, reappearing through a clean merge. |
+| i0037 | low | All three `backlog_run` call sites redirect stdout to `/dev/null`, swallowing the helper's own failure warning. |
+
+**Bookkeeping corrected on `main`, with evidence.** `i0015`, `i0020` and `i0025` read `proposed`
+with `branch: null` on `main` while built and green on their branches — the `i0031` staleness
+again. Corrected, and a merge instruction pinned as a note on `i0022`: **merge
+`idea/integrate-turn12`, not the four branches `main`'s queue names**, and resolve the
+`backlog.json` conflict as a **union**, because `main` has no `i0027`..`i0031` and none of
+`i0032`..`i0038`. `plan_turn` on the corrected queue returns 13 merge, 14 merge, 15 deck, 16 review.
+
+### Looked at and found clean
+
+- **Data safety of the whole scope.** 32 opaque-looking candidates extracted from the branch
+  diff, every one counted against the export: **all zero**. The `Entire-Checkpoint:` ULIDs in
+  `main`'s commit messages: also zero. No dataset content anywhere in the diff; nothing removed.
+- **The i0021 fix (turn 10) holds and was re-checked at source.** The retired key is named for
+  what it is, `4.59` survives only as a claims-table row, the chart's arrow labels two levels
+  instead of a distance, and `router/console.html` — the German artifact, easy to forget — carries
+  no gap framing at all. The *direction* of turn 10's reframing is right; i0032 is about how far
+  it was pushed, not about undoing it.
+- **i0022 is genuinely fixed**, verified by re-running the original repro rather than reading the
+  fix: `DATA_SAFETY_SCAN_REF` at an unresolvable ref now exits 1 with `files=0 … failed=3`, where
+  it used to print `OK (skipped=6)` and exit 0.
+- **i0023 is genuinely fixed** (confirmed by the security reviewer against a hostile ref in a
+  throwaway repo): the name is refused before it reaches a git argument list, the push is pinned
+  to the scanned sha, and clean sibling branches in the same cycle still push.
+- **The 7 tests that do not run under `SCAN_REF`** were checked one by one rather than assumed:
+  all are the generated-artifact scanners and the git-history regression fixture, none of which a
+  ref can carry. Legitimate, not an inert control.
+- **`router/figs.py`'s `switched_spend_share`** reproduces from `routes.jsonl` and `recon.jsonl`
+  by hand to the digits the OPE path reports, and the new frontier CSV column has no consumer that
+  reads by position.
+- **`loop/backlog.py`'s fail-closed store, `next_id`, `backlog_scalar`**, the `TYPE`/`TURN`
+  handling in `run.sh` (no path traversal — `TYPE` only reaches `PROMPT_FILE` after matching a
+  fixed enum), and the single-quoted `python -c` rule from ADR-012: all still hold.
+
+### Note for the next review turn
+
+Two agents this turn had side effects worth knowing about. The `code-review` skill ran
+`git checkout --` on the shared review worktree and silently discarded this turn's uncommitted
+backlog edits, which had to be re-filed — **commit backlog changes before dispatching anything
+that may clean a worktree.** And the `security-reviewer`'s output tripped the harness's
+instruction-shaped-content filter; its findings were still sound and were reproduced
+independently before being filed.
