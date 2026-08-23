@@ -282,3 +282,38 @@ idiom `tests/test_data_safety.py` already uses for documentary placeholders.
 **Consequence.** `make test` is the gate (`tests/test_verify.py`); `make verify` is the readable
 report of what bound to what. It is deliberately NOT part of `make all` — `all` rebuilds the
 claims table, and a deck half-way through an edit would wedge the pipeline for the wrong reason.
+
+## ADR-010 — A leak detector is tested against the pattern, not against the repo
+
+**Status:** Accepted
+
+**Decision.** `tests/test_data_safety.py` gains two things: the concrete-placeholder pattern now
+accepts any *attached* separator between a prefix and its serial and normalises what it finds
+back to the underscore form, and a new shape-free check extracts opaque-looking identifiers from
+every repo file and fails on any the export also contains. Both are backed by tests that
+exercise the detector directly rather than by the corpus tests alone.
+
+**Why.** A corpus test passes for two different reasons — the repo is clean, or the detector is
+blind — and it cannot tell you which. Three raw identifiers and, separately, a placeholder
+serial written in a slash shorthand all reached a shared repository while this suite was green.
+The suite was not lying; it was answering a narrower question than everyone read it as
+answering.
+
+**The measurement.** (a) The old pattern required a trailing `_<digits>`; the shorthand that sat
+on `main` from commit 5082319 to c05e078 put the digits after a slash, and the value it encoded
+occurs in the export in the thousands. The generalised pattern matches all eight attached
+separators tested and normalises them to one token, so the DOCUMENTARY allowlist stays at 4 of
+its cap of 8. (b) Whitespace is excluded from the separator class, and that was measured, not
+assumed: with whitespace allowed the file failed on its own docstring, where "…, 3 of them"
+reads as a serial. (c) The opaque-token extractor yields 24 candidates across 114 repo files
+once `data:…;base64,` payloads are stripped — without the strip, `presentation.html`'s inlined
+577 KB PNG alone shatters into ~9,000 fragments of the same shape. Exactly one of the 24 occurs
+in the export, and it is an arm identifier from `router.pricing.OBSERVED_ARMS`; exempting the
+arm table structurally rather than by allowlist leaves 23 candidates and 0 hits. (d) Both corpus checks were confirmed by
+seeding a leak into an untracked scratch file: each failed, naming the file and a masked shape.
+
+**Consequence.** Failure messages print a masked shape — letters to `a`/`A`, digits to `#` —
+and never the token, because the token is the leak. The exemption list tracks the arm table, so
+adding an arm cannot be mistaken for widening a safety carve-out. What this still does not
+cover: an identifier shorter than 16 characters, or one that appears in the export only in a
+form the repo rewrote.
