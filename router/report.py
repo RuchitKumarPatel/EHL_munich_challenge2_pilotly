@@ -677,7 +677,11 @@ def frontier_claims(claims: dict, front: dict) -> None:
                  p["ci_hi_pp"])
     _put(claims, "frontier.gated_router.hull_bound_at_same_spend_pp",
          front["gated_hull_bound_pp"])
-    _put(claims, "frontier.gated_router.gap_above_hull_pp",
+    # NOT a bound on the gap. Both legs are one-sided UPPER bounds, so their
+    # difference bounds the true difference in neither direction. The key is
+    # named for what it arithmetically is, so no prose can quote it as "the
+    # gap" without the name contradicting the sentence. See ADR-014.
+    _put(claims, "frontier.gated_router.upper_bound_minus_hull_upper_bound_pp",
          front["gated_gap_vs_hull_pp"])
     _put(claims, "frontier.gated_router.beats_hull", front["router_beats_hull"])
     _put(claims, "frontier.off_lane.runs_not_drawn", front["off_lane"]["n_runs"])
@@ -904,14 +908,31 @@ def render_numbers_md(claims: dict) -> str:
       f"{q('refusal.mde_best_powered_arm_pair.pp', '.1f')} pp on the "
       f"best-powered arm pair.")
     a("")
-    a(f"5. **The router does not yet beat randomising between two arms.** At the "
-      f"same spend, the single-arm mixture frontier reaches "
-      f"{q('frontier.gated_router.hull_bound_at_same_spend_pp', '+.2f')} pp while "
-      f"the gated router reaches "
-      f"{q('frontier.policy.gated_router.upper_bound_pp', '+.2f')} pp — a gap of "
-      f"{q('frontier.gated_router.gap_above_hull_pp', '+.2f')} pp the wrong way. "
-      f"On these bounds the routing logic has not earned its complexity, and the "
-      f"honest recommendation is the cheaper single arm, not the router.")
+    a(f"5. **We routed too little to have earned a frontier comparison.** At the "
+      f"same spend the single-arm mixture frontier sits at "
+      f"{q('frontier.gated_router.hull_bound_at_same_spend_pp', '+.2f')} pp and "
+      f"the gated router at "
+      f"{q('frontier.policy.gated_router.upper_bound_pp', '+.2f')} pp. **Do not "
+      f"subtract those.** Both are ONE-SIDED UPPER bounds "
+      f"(`router.ope.non_inferiority_bound` returns `hi` only), so their "
+      f"difference bounds the true difference in neither direction and no "
+      f"directional verdict follows from it. The key holding it is named "
+      f"`frontier.gated_router.upper_bound_minus_hull_upper_bound_pp` for exactly "
+      f"that reason. What CAN be said is arithmetic and stronger: the identified "
+      f"delta is a spend-weighted average of per-run differences in [0, 1] over "
+      f"the switched runs only, so its magnitude cannot exceed the share of spend "
+      f"the policy moves — and this router moves "
+      f"{q('ope.routed.switched.spend_share', '.1%')} of est. spend "
+      f"({q('policy.rerouted.n', ',')} of {q('policy.routable.n', ',')} routable "
+      f"trajectories). No policy at this tau can reach a hull sitting at "
+      f"{q('frontier.gated_router.hull_bound_at_same_spend_pp', '+.2f')} pp, "
+      f"however well it routes. The finding is about tau, not about the routing "
+      f"rule. Note also what the comparator is: at this spend the hull is an "
+      f"interpolation, i.e. a RANDOMISATION between "
+      f"`{q('frontier.hull.vertex1.arm')}` and `{q('frontier.hull.vertex2.arm')}` "
+      f"— not one cheap arm, and the second of those prices at "
+      f"${q('frontier.policy.all_to_claude-opus-5.usd', ',.2f')}, the top of the "
+      f"chart's cost axis.")
     a("")
     a("## Two arithmetic corrections to earlier drafts")
     a("")
