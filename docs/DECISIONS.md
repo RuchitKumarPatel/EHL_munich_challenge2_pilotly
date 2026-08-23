@@ -465,3 +465,57 @@ reintroduce exactly the defect this ADR closes. Until that exists, the project q
 `refusal.mde_best_powered_arm_pair.pp` is an unweighted arm-pair rate contrast — a different
 estimand on a different weighting. Asserting it would replace one untraceable comparison with
 another.
+
+---
+
+## ADR-019 — The state store refuses an unreadable file, and the supervisor checks the exit code
+
+**Status:** Accepted
+
+**Context.** `loop/backlog.py` is the only writer of `loop/state/`, and every turn agent — running
+with bypassPermissions — is a writer of that same directory by way of this CLI. It read both files
+with a bare `json.loads` and indexed `i["id"]` and `i["status"]` with no `.get`. `loop/run.sh`
+captures its stdout by command substitution under `set -uo pipefail` (no `-e`), which **discards
+the exit code**. So a half-written file produced a traceback, the traceback produced an empty
+scalar, and the loop stopped with:
+
+    unknown turn type '' -- stopping
+
+The right failure, reported as the wrong cause. Measured on the pre-fix code: `turn --bump`,
+`plan` and `list` each exit 1 with empty stdout on a truncated state file, on a truncated backlog
+file, and on an item missing its `status` key. This is the same shape as ADR-012 (the supervisor
+trusting its own state file) and the same fail-open class as ADR-015 (a check that cannot run
+reading as a pass).
+
+**Decision, two halves that only work together.**
+
+1. *The store fails closed and by name.* A file that exists and does not parse, or parses to the
+   wrong shape, raises `StateError` and exits `3` — distinct from argparse's `2` — with a sentence
+   on **stderr** and **nothing on stdout**, because the supervisor cannot tell an empty answer from
+   an absent one. `_check_backlog` validates every field the module later indexes without a
+   `.get`: item is an object, `id` matches `i\d+` and is unique, `status` is one of `STATUSES`,
+   `title` is a string, `notes` is a list.
+2. *The supervisor checks the code.* Every capture of the CLI goes through `backlog_scalar`, which
+   returns non-zero and prints nothing on a failed **or empty** read, and logs the CLI's own
+   message; the writes go through `backlog_run`. `TURN`, `TYPE` and the queue block of the turn
+   prompt each stop the night with the real cause in the log and in the journal.
+
+**The tempting fix is the bug.** Defaulting a corrupt `state.json` — the obvious "be robust" move —
+sets `cost_usd` to `0`, and `stop_reason`'s ceiling reads exactly that field. One corrupt file
+would buy the night an unlimited budget. So: **absent is not corrupt.** A missing file defaults (the
+first turn of a night has none); a file that exists and does not parse is an error and is never
+rewritten from defaults.
+
+**Also closed.** `next_id` used to swallow a non-numeric id and restart at `i0001` — the id such a
+file is most likely to already hold, so the recovery path minted a duplicate. Validation makes the
+`try/except` unnecessary, and the ordering total.
+
+**The durable guard is textual.** `loop/run.sh` may contain no raw `$("${BACKLOG[@]}" ...)` capture;
+only the two guards' `"$@"` pass-through is exempt, and the test pins that there are exactly two.
+A behavioural test cannot hold when someone adds a seventh call site next week; this one does.
+
+**Evidence.** Both halves mutation-controlled: reverting `loop/backlog.py` to its previous version
+fails 11 of the 19 tests, and turning off the empty-output check in `backlog_scalar` fails 1 more.
+`make test` 159 OK (was 140), `make all` green (301 claims), `router.gates` GREEN 4 pass / 2 warn /
+0 fail, `router.verify` PASS on 44 numerals. No claim value moved: this is loop infrastructure and
+quotes no export number.
