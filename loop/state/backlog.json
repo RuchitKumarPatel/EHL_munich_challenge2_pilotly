@@ -67,13 +67,17 @@
     "title": "Close the raw-identifier gap in tests/test_data_safety.py",
     "kind": "code",
     "why": "Data safety. The suite matches two placeholder shapes by regex but nothing catches a raw un-redacted vendor id copied out of the export -- which is how three of them reached a shared repo on night one. Success = a test that extracts opaque-looking tokens from every tracked file and fails on any whose occurrence count in export/ is nonzero, with the existing documentary allowlist honoured.",
-    "status": "accepted",
-    "branch": null,
+    "status": "implemented",
+    "branch": "idea/data-safety-detectors",
     "created_turn": 3,
     "notes": [
       {
         "turn": 3,
         "text": "DATA-SAFETY. Not a judgement call, skips evaluate."
+      },
+      {
+        "turn": 6,
+        "text": "Implemented on idea/data-safety-detectors (3bfe5f1). New RepoCarriesNoOpaqueExportToken: extracts every maximal 16-64 character [A-Za-z0-9_-] run mixing letters and digits from all 114 tracked and untracked-not-ignored files, then streams the 101 MB export once and fails on any token the export contains. MEASURED: 23 candidates, 0 hits. Two design points measured rather than guessed -- (a) base64 data URIs must be stripped first, or the inlined 577 KB PNG in presentation.html alone contributes ~9000 fragments of exactly this shape; (b) exactly one raw candidate does occur in the export and it is an arm identifier, so the 9 ids in router.pricing.OBSERVED_ARMS are exempt STRUCTURALLY, tracking the arm table rather than being an allowlist that can grow. Two controls: a token lifted out of the export at runtime IS found by the scanner (so the scan is not vacuous), and that same token seeded into an untracked scratch file made the test fail. Failure output prints the repo path and a MASKED shape (letters -> a/A, digits -> #), never the token. Runtime +3 s. Gate: make test 92 OK, make all green, router.gates GREEN. ADR-010."
       }
     ]
   },
@@ -161,13 +165,17 @@
     "title": "CONCRETE_PII misses a serial written adjacent to its prefix",
     "kind": "code",
     "why": "tests/test_data_safety.py:267 requires a trailing _<digits>, so a serial written with the digits after any other separator slips through. loop/JOURNAL.md carried exactly that shorthand on main and survived the turn-1 cleanup that docs/DATA-SAFETY-DEBT.md records as complete; the value it encodes occurs in the export in the thousands. Removed in c05e078. This is the same detector gap family as i0005 but a different regex: i0005's opaque-token heuristic would not catch it either, because the token is not opaque-looking.",
-    "status": "accepted",
-    "branch": null,
+    "status": "implemented",
+    "branch": "idea/data-safety-detectors",
     "created_turn": 4,
     "notes": [
       {
         "turn": 4,
         "text": "DATA-SAFETY. Likely one implement turn together with i0005. Fix: match the prefix plus a digit run separated by ANY non-word character, and normalise before comparing to DOCUMENTARY. Success = a test asserting the shorthand form that reached main in commit 5082319 is now detected, plus make test still green with the allowlist still capped at 8."
+      },
+      {
+        "turn": 6,
+        "text": "Implemented on idea/data-safety-detectors (3bfe5f1). CONCRETE_PII/CONCRETE_ENTITY now match a prefix plus up to two ATTACHED non-alphanumeric characters plus a digit run, and normalise back to the underscore form before comparing to DOCUMENTARY, so one allowlist entry covers every spelling -- allowlist unchanged at 4 of its cap of 8. Whitespace is excluded from the separator class and that was MEASURED, not assumed: with whitespace allowed the file failed on its own docstring, where a sentence of the form '<prefix>, 3 of them' reads as a serial. New ConcretePlaceholderShapes class tests the PATTERN rather than the corpus -- 8 attached separators, entity bracket round-trip, DOCUMENTARY round-trip, prose carve-out -- with every probe assembled at runtime from an invented prefix (0 occurrences in the export, measured) so the file carries no concrete placeholder of its own. Positive control: the slash shorthand seeded into an untracked scratch file made the corpus test fail, naming the file and the normalised token; scratch file deleted in the same command, never committed. Gate: make test 92 OK, make all green, router.gates GREEN 4 pass / 2 warn / 0 fail. ADR-010."
       }
     ]
   },
