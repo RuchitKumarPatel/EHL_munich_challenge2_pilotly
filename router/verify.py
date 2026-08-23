@@ -43,8 +43,12 @@ TWO THINGS THE PARSER HAS TO GET RIGHT
 
 WHAT IT WRITES
     No artifact. It prints the bindings and any orphans. Exit code is the gate:
-    0 clean, 1 on any orphan, 2 BLOCKED when claims.json is missing -- the same
-    contract as `python -m router.gates`.
+    0 clean, 1 on any orphan, 2 BLOCKED when claims.json is missing OR when a
+    required artifact is absent -- the same contract as `python -m router.gates`.
+    An absent artifact blocks rather than being skipped into a PASS line: the
+    deck carries most of the bound numerals and only arrived at the repo root
+    at turn 5, so any later rename would otherwise have disabled the prose gate
+    for the whole deck while the banner still read clean (ADR-018).
 
 ACCEPTANCE (printed by `python -m router.verify`)
     On the shipped tree: 0 orphans across README.md, router/console.html,
@@ -64,17 +68,22 @@ from dataclasses import dataclass, field
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CLAIMS_NAME = os.path.join("results", "claims.json")
 
-#: The git-tracked user-facing artifacts, each with its markup kind and the
-#: locale its numerals are written in. Locale is declared, never sniffed.
-ARTIFACTS: tuple[tuple[str, str, str], ...] = (
-    ("README.md", "markdown", "en"),
-    ("router/console.html", "html", "de"),
-    ("presentation.html", "html", "en"),
-    ("templates/presentation.html", "html", "en"),
-    ("site/index.html", "html", "en"),
+#: The git-tracked user-facing artifacts, each with its markup kind, the locale
+#: its numerals are written in, and whether the gate REQUIRES it to be present.
+#: Locale is declared, never sniffed. `required` is declared too, and for the
+#: same reason: an artifact that disappears must be a decision someone made in
+#: this tuple, not a file the scan quietly stopped covering. All five are
+#: git-tracked and shipped, so all five are required -- tests/test_verify.py
+#: pins that, so marking one optional to silence a red gate breaks a test.
+ARTIFACTS: tuple[tuple[str, str, str, bool], ...] = (
+    ("README.md", "markdown", "en", True),
+    ("router/console.html", "html", "de", True),
+    ("presentation.html", "html", "en", True),
+    ("templates/presentation.html", "html", "en", True),
+    ("site/index.html", "html", "en", True),
 )
 
-ARTIFACT_PATHS: tuple[str, ...] = tuple(rel for rel, _, _ in ARTIFACTS)
+ARTIFACT_PATHS: tuple[str, ...] = tuple(rel for rel, _, _, _ in ARTIFACTS)
 
 #: Numerals that are structure rather than measurement, each with the reason it
 #: is not a claim. Entries are CONTEXT patterns, not bare values: "5" is a claim
@@ -144,12 +153,18 @@ class Report:
     orphans: list = field(default_factory=list)
     scanned: list = field(default_factory=list)
     missing: list = field(default_factory=list)
+    skipped: list = field(default_factory=list)
     unused_allowlist: list = field(default_factory=list)
 
     @property
     def ok(self) -> bool:
-        """True when nothing was quoted that claims.json cannot account for."""
-        return not self.orphans
+        """True when the whole declared surface was read and nothing is orphaned.
+
+        `missing` counts as much as `orphans`: a required artifact that is not
+        on disk was not checked, and an unchecked artifact has not passed. The
+        two are still reported separately because they need different fixes.
+        """
+        return not self.orphans and not self.missing
 
 
 # ------------------------------------------------------------------ stripping
@@ -273,10 +288,10 @@ def run(root: str = REPO_ROOT, claims_path: str | None = None) -> Report:
     numeric = _numeric_claims(load_claims(claims_path))
     report = Report()
     used: set = set()
-    for rel, kind, locale in ARTIFACTS:
+    for rel, kind, locale, required in ARTIFACTS:
         path = os.path.join(root, rel)
         if not os.path.isfile(path):
-            report.missing.append(rel)
+            (report.missing if required else report.skipped).append(rel)
             continue
         with open(path, "r", encoding="utf-8") as fh:
             text = fh.read()
@@ -306,16 +321,25 @@ def print_report(report: Report) -> None:
                   % (b.line, b.literal, shown, "  [as %]" if b.via_percent else ""))
         for o in orph:
             print("    :%-4d %-10s -> ORPHAN (no claim has this value)" % (o.line, o.literal))
+    for rel in report.skipped:
+        print("%s - declared optional and absent, skipped" % rel)
     for rel in report.missing:
-        print("%s - absent from this tree, skipped" % rel)
+        print("%s - REQUIRED and absent from this tree" % rel)
     print()
+    if report.missing:
+        print("BLOCKED - %d required artifact(s) could not be read: %s."
+              % (len(report.missing), ", ".join(report.missing)))
+        print("The gate covers a surface declared in router/verify.ARTIFACTS, so a")
+        print("file that moved narrows that surface without saying so -- and a")
+        print("narrowed gate reads exactly like a clean one. Restore the path, or")
+        print("update ARTIFACTS and say in docs/DECISIONS.md why it moved.")
     if report.orphans:
         print("FAIL - %d orphan numeral(s). Every number in a user-facing artifact"
               % len(report.orphans))
         print("must exist in the claims table under a stable key (docs/CONTRACTS.md,")
         print("ADR-005). Add it through router/report.py, or -- if it is structural")
         print("rather than measured -- add a NOT_A_CLAIM entry with its reason.")
-    else:
+    if not report.orphans and not report.missing:
         print("PASS - %d numeral(s) across %d artifact(s), all accounted for."
               % (len(report.bindings), len(report.scanned)))
     if report.unused_allowlist:
@@ -346,6 +370,12 @@ def main(argv=None) -> int:
               file=sys.stderr)
         return 2
     print_report(report)
+    if report.missing:
+        # 2 and not 1, mirroring the absent claims table: the run did not cover
+        # what it declares it covers, so its orphan list is partial and no
+        # verdict about the prose follows from it. Orphans found on the part it
+        # DID read are still printed above -- blocking must not swallow them.
+        return 2
     return 0 if report.ok else 1
 
 

@@ -14,6 +14,9 @@ WHAT THIS CHECKS
       * NEGATIVE CONTROL — without this the check is unfalsifiable. A scratch
         copy of the tree with one number perturbed must exit non-zero and name
         the file, the line and the offending literal.
+      * COVERAGE — a gate that silently narrows its own surface is worse than
+        no gate. An artifact declared in ARTIFACTS and absent from the tree
+        must BLOCK, not be skipped into a PASS line (ADR-018).
 
     Plus the allowlist discipline copied from tests/test_data_safety.py: the
     NOT_A_CLAIM escape hatch stays short and every entry carries a real
@@ -32,6 +35,7 @@ import contextlib
 import io
 import os
 import shutil
+import subprocess
 import tempfile
 import unittest
 
@@ -46,6 +50,14 @@ def _quiet(fn, *args):
     buf, err = io.StringIO(), io.StringIO()
     with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(err):
         return fn(*args)
+
+
+def _capture(fn, *args):
+    """Call an entry point and return (exit code, everything it printed)."""
+    buf, err = io.StringIO(), io.StringIO()
+    with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(err):
+        rc = fn(*args)
+    return rc, buf.getvalue() + err.getvalue()
 
 
 def _need_claims():
@@ -171,6 +183,107 @@ class TheEscapeHatchStaysHonest(unittest.TestCase):
             unused, [],
             "NOT_A_CLAIM entries that matched nothing in any artifact -- remove "
             "them, or the allowlist stops describing the tree: %s" % (unused,))
+
+
+class AMissingArtifactBlocksInsteadOfPassing(unittest.TestCase):
+    """A declared artifact that is absent must block the gate, never be skipped.
+
+    presentation.html carries 36 of the 44 bound numerals and only reached the
+    repo root at turn 5. Before this, a rename or a relocation by any later
+    deck turn silently removed the whole deck from the gate's surface and the
+    run still printed PASS -- so the prose contract would have read as enforced
+    on a tree where nothing checked the deck at all.
+    """
+
+    def setUp(self):
+        _need_claims()
+        self.tmp = tempfile.mkdtemp(prefix="router-verify-missing-")
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        for rel in verify.ARTIFACT_PATHS:
+            dst = os.path.join(self.tmp, rel)
+            os.makedirs(os.path.dirname(dst), exist_ok=True)
+            shutil.copyfile(os.path.join(REPO_ROOT, rel), dst)
+
+    def _drop(self, rel):
+        os.remove(os.path.join(self.tmp, rel))
+
+    def test_removing_the_deck_is_not_ok(self):
+        self._drop("presentation.html")
+        report = verify.run(root=self.tmp, claims_path=CLAIMS)
+        self.assertIn("presentation.html", report.missing)
+        self.assertFalse(
+            report.ok,
+            "the deck vanished from the scanned surface and the report still "
+            "read clean; a gate that cannot see an artifact has not passed it")
+
+    def test_the_entry_point_exits_non_zero_and_names_the_missing_path(self):
+        self._drop("presentation.html")
+        rc, out = _capture(verify.main, ["--root", self.tmp, "--claims", CLAIMS])
+        self.assertNotEqual(rc, 0, "a missing artifact exited 0")
+        self.assertEqual(rc, 2, "an artifact the gate cannot read is BLOCKED (2), "
+                                "not an orphan (1) -- see router/verify.py")
+        self.assertIn("presentation.html", out)
+        self.assertNotIn("PASS", out)
+
+    def test_orphans_do_not_hide_behind_a_missing_artifact(self):
+        # Both wrong at once: the run must still name the orphan it did find,
+        # so a blocked exit never swallows a real finding.
+        self._drop("README.md")
+        path = os.path.join(self.tmp, "presentation.html")
+        with open(path, "r", encoding="utf-8") as fh:
+            blob = fh.read()
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(blob.replace("10,845", "10,846", 1))
+        rc, out = _capture(verify.main, ["--root", self.tmp, "--claims", CLAIMS])
+        self.assertEqual(rc, 2)
+        self.assertIn("README.md", out)
+        self.assertIn("10,846", out)
+
+    def test_every_artifact_absent_still_blocks(self):
+        for rel in verify.ARTIFACT_PATHS:
+            self._drop(rel)
+        rc, out = _capture(verify.main, ["--root", self.tmp, "--claims", CLAIMS])
+        self.assertEqual(rc, 2, "an empty surface printed a verdict")
+        self.assertNotIn("PASS", out)
+
+
+class TheDeclaredSurfaceMatchesTheTree(unittest.TestCase):
+    """`required` is a declaration about the repo, so the repo must bear it out."""
+
+    def test_every_required_artifact_exists_in_the_shipped_tree(self):
+        absent = [rel for rel, _, _, req in verify.ARTIFACTS
+                  if req and not os.path.isfile(os.path.join(REPO_ROOT, rel))]
+        self.assertEqual(
+            absent, [],
+            "declared required but not in the tree -- either the file moved and "
+            "ARTIFACTS did not follow, or it is genuinely optional and must say "
+            "so with a reason: %s" % (absent,))
+
+    def test_no_artifact_is_quietly_downgraded_to_optional(self):
+        # The failure mode this pins is social, not mechanical: the cheapest way
+        # to turn a red gate green is to mark the artifact it complains about
+        # optional. Flipping a flag here has to break a test and be argued for.
+        optional = [rel for rel, _, _, req in verify.ARTIFACTS if not req]
+        self.assertEqual(
+            optional, [],
+            "every user-facing artifact is git-tracked and shipped, so none is "
+            "optional; if that changed, record why in docs/DECISIONS.md: %s"
+            % (optional,))
+
+    def test_every_declared_artifact_is_git_tracked(self):
+        # An untracked file is not user-facing shipped content, so it has no
+        # business being a required part of the gate's surface.
+        try:
+            out = subprocess.run(
+                ["git", "-C", REPO_ROOT, "ls-files", "-z", "--"]
+                + list(verify.ARTIFACT_PATHS),
+                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, check=True)
+        except (OSError, subprocess.CalledProcessError) as exc:
+            raise unittest.SkipTest("git is unavailable here: %s" % (exc,))
+        tracked = set(out.stdout.decode("utf-8").split("\0")) - {""}
+        untracked = [rel for rel in verify.ARTIFACT_PATHS if rel not in tracked]
+        self.assertEqual(untracked, [], "declared but not git-tracked: %s"
+                         % (untracked,))
 
 
 if __name__ == "__main__":
