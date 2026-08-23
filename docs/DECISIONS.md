@@ -190,3 +190,39 @@ order of magnitude.
 **Consequence.** `router/recon.py` owns the turn-boundary rule (a boundary opens at the start of
 every maximal run of model-produced items) and every downstream cost number derives from it.
 `group_trajectories()` is banned; `.claude/settings.json` warns on any file that writes its name.
+
+---
+
+## ADR-012 — The supervisor treats its own state file as untrusted input
+
+**Status:** Accepted
+
+**Decision.** No `python -c` in `loop/run.sh` may be written with a double-quoted argument.
+Every one of them is single-quoted, so the shell cannot splice anything into it, and every value
+it needs travels as `argv`. When `loop/state/state.json` does not yield a number for `cost_usd`,
+the loop STOPS rather than continue past a guard it could not evaluate.
+
+**Why.** `run.sh` is the one process in this project that runs outside every tool-permission
+boundary — it is the thing that launches the sandboxed turn, so nothing sandboxes it. The budget
+check built its Python by interpolation:
+
+    "$PY" -c "import sys;sys.exit(0 if float('$spent') >= float('$LOOP_BUDGET_USD') else 1)"
+
+`$spent` is the `cost_usd` field printed straight out of a file that every turn agent rewrites
+while running with `bypassPermissions`. A turn that wrote a crafted string into its own cost
+field would have that string executed as Python by the supervisor — and `stop_reason` is the
+first thing the loop body calls, so it would be re-executed at the top of every later iteration.
+
+**The measurement.** `tests/test_supervisor_input.py` runs the same probe payload down both
+paths. Through the old interpolated form it executes and writes its sentinel file; through
+`stop_reason` as it now stands the sentinel is absent and the loop stops with
+`unreadable cost_usd`. Before the fix 4 of the file's 9 tests failed; after it, 9 pass and the
+suite is 91 (was 82).
+
+**Consequence.** Five readers were converted, not just the one that was exploitable:
+`state_field`, `usage_pct`, `quota_reset_epoch`, `is_rate_limited` and the per-turn `COST`
+extractor. Two behavioural changes came with it. A new `state_int` coerces the turn counter,
+because `[ "$turn" -ge 40 ]` on a non-integer is a shell error and an erroring guard reads as
+"do not stop" — the max-turns limit was switchable off by writing a string. And the budget check
+is now three-valued (over / under / unreadable) and fails closed on the third, which is the only
+one of the three that a corrupt state file can reach by accident.
