@@ -79,29 +79,68 @@ def _by_status(items: list[dict], status: str) -> list[dict]:
 
 
 # ----------------------------------------------------------------- turn planner
+def _cadence_due(turn: int, every: int) -> bool:
+    """Is `turn` a multiple of the cadence `every`?
+
+    Anything <= 0 means the cadence is OFF. Both cadences go through here so
+    they disable identically: `deck_every` used to be divided into `turn` with
+    no guard, so DECK_EVERY=0 raised ZeroDivisionError inside the command
+    substitution that run.sh does not exit-check -- the supervisor got an empty
+    TYPE and logged "unknown turn type" with the real cause buried in a log.
+    Turn 0 is "before the first turn" and never satisfies a cadence.
+    """
+    return turn > 0 and every > 0 and turn % every == 0
+
+
+def _deck_due(turn: int, deck_every: int, review_every: int) -> bool:
+    """Is `turn` a deck turn, counting a deck deferred by a lost tie?
+
+    `review` outranks `deck` on a turn that satisfies both cadences. Without the
+    second clause here that would be a silent DROP rather than a deferral, and
+    whenever `deck_every == review_every` every deck turn is a tie -- so the
+    deck would never run. The deferred deck runs on the next turn instead,
+    unless that turn is itself a review turn (the caller checks review first).
+    """
+    if _cadence_due(turn, deck_every):
+        return True
+    lost_a_tie_last_turn = (_cadence_due(turn - 1, deck_every)
+                            and _cadence_due(turn - 1, review_every))
+    return lost_a_tie_last_turn
+
+
 def plan_turn(items: list[dict], turn: int, deck_every: int, review_every: int = 0) -> str:
     """Which turn type runs next. Pure function of the queue -- no model discretion.
 
     Order is load-bearing:
-      * the deck check comes first so the slide set is never more than
-        `deck_every` turns stale, whatever the queue is doing;
-      * `review` comes next for the same reason -- a quality and security pass
-        that only runs when the queue happens to be empty is a pass that never
-        runs on the night the loop is busiest, which is exactly the night it
-        matters. It reads its own scope from `last_review_sha`, so a review turn
-        with nothing new to look at costs almost nothing;
+      * `review` comes first -- a quality and security pass that only runs when
+        the queue happens to be empty is a pass that never runs on the night the
+        loop is busiest, which is exactly the night it matters. It reads its own
+        scope from `last_review_sha`, so a review turn with nothing new to look
+        at costs almost nothing;
+      * the deck check comes next so the slide set is never far out of date,
+        whatever the queue is doing;
       * `merge` outranks `implement` so main keeps moving and the next idea
         branches off a current main (which keeps every merge a fast-forward);
       * `council` fires only when the queue is dry, because it is by far the
         most expensive turn type.
 
-    A turn that satisfies both cadences goes to `deck`; review picks it up on its
-    next multiple rather than both being crammed into one turn.
+    REVIEW WINS A TIE AND THE DECK IS DEFERRED, NOT DROPPED. That is the fix for
+    a measured bug rather than a preference. The deck check used to come first,
+    so a turn matching both cadences went to `deck` and review waited for its
+    next multiple -- which, whenever `deck_every` divides `review_every`, is
+    also a deck turn. Over turns 1..40 that starved review completely for
+    (5,10), (4,4), (5,5) and (3,6); the shipped (5,4) fired, but lost turn 20.
+    A stale deck costs one turn and a skipped review costs the night, so the tie
+    goes to review -- but simply swapping the two checks moves the starvation
+    onto the deck instead (measured: with (4,4) and (5,5) the deck then never
+    fires at all). `_deck_due` therefore also fires on the turn AFTER a lost
+    tie, which bounds deck staleness at `deck_every + 1` turns for every pair.
+    tests/test_backlog_plan.py pins both halves of that trade.
     """
-    if turn > 0 and turn % deck_every == 0:
-        return "deck"
-    if turn > 0 and review_every > 0 and turn % review_every == 0:
+    if _cadence_due(turn, review_every):
         return "review"
+    if _deck_due(turn, deck_every, review_every):
+        return "deck"
     if _by_status(items, "implemented"):
         return "merge"
     if _by_status(items, "accepted"):

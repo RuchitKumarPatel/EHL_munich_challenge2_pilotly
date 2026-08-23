@@ -34,8 +34,8 @@ The supervisor picks the turn type from the queue. No model discretion is involv
 in `loop/backlog.py::plan_turn`:
 
 ```
-turn % DECK_EVERY == 0    ->  deck        rebuild the slides from claims.json
 turn % REVIEW_EVERY == 0  ->  review      quality + security over what landed since the last one
+turn % DECK_EVERY == 0    ->  deck        rebuild the slides from claims.json
 any implemented           ->  merge       second-opinion the gate, then move main
 any accepted              ->  implement   build it test-first on idea/<slug>
 any proposed              ->  evaluate    judge one idea properly, accept/reject/park
@@ -47,6 +47,14 @@ runs when the queue happens to be empty is one that never runs on the busiest ni
 exactly the night it matters. `merge` outranks `implement` so `main` keeps moving, which keeps
 every idea branch a clean descendant of `main` and every merge a simple one. `council` is last
 because it is by far the most expensive turn type — it only fires when the queue is genuinely dry.
+
+**A turn that satisfies both cadences goes to `review`, and the deck runs on the next turn
+instead.** A stale deck costs one turn; a skipped review costs the night. Review used to lose
+that tie, and because a tie recurs on exactly the turns where `DECK_EVERY` divides `REVIEW_EVERY`,
+review then never fired at all for `(5,10)`, `(4,4)`, `(5,5)` or `(3,6)` — the shipped `(5,4)`
+worked by luck. The deferral matters just as much: without it, `DECK_EVERY == REVIEW_EVERY` would
+starve the deck the same way. Deck staleness is bounded at `DECK_EVERY + 1` turns; both halves are
+pinned by `tests/test_backlog_plan.py`. Setting either cadence to `0` disables it.
 
 A `review` turn files what it finds as backlog entries rather than fixing anything, so every fix
 still goes through `implement` and gets a test and a gate. The one exception is dataset content in
