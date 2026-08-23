@@ -417,13 +417,17 @@
     "title": "The per-ref data-safety scan fails open: any git error becomes 'branch clean'",
     "kind": "code",
     "why": "tests/test_data_safety.py:267 plus loop/push_gate.sh:59 on idea/integrate-turn7. _repo_files() returns None on OSError or CalledProcessError; every content test then raises unittest.SkipTest instead of failing, and python -m unittest exits 0 when everything skips. ds_scan_ref reads only that exit code, so the branch is reported clean having enumerated zero files, and push_all_branches pushes it. PROVEN this turn without any exotic input: DATA_SAFETY_SCAN_REF=refs/heads/no-such-branch-xyz python -m unittest tests.test_data_safety exits 0 with 'OK (skipped=6)'. Same fail-open shape in RepoCarriesNoOpaqueExportToken, which skips outright when export/ is absent or partial -- so on a machine without the export the headline raw-id detector is inert and green. This is the i0010 fail-open class reappearing inside the gate written to close it. Found by the turn-8 review turn (security-reviewer and the code-review skill converged on it independently).",
-    "status": "accepted",
-    "branch": null,
+    "status": "implemented",
+    "branch": "idea/scan-fails-closed",
     "created_turn": 8,
     "notes": [
       {
         "turn": 8,
         "text": "DATA-SAFETY. Fix: treat any git-subprocess failure during a scan as RED, never skip. Concretely -- (1) _repo_files() must raise rather than return None when SCAN_REF is set, since 'git is unavailable' is a plausible excuse on a developer laptop and never a plausible one for a ref the gate just enumerated from for-each-ref; (2) ds_scan_ref must not trust the exit code alone -- have the suite print a machine-readable line naming how many files it actually enumerated and how many tests it ran, and have push_gate.sh refuse the branch when that count is zero or the line is absent; (3) RepoCarriesNoOpaqueExportToken must FAIL, not skip, when export/ is missing while the gate is running, since an inert detector is indistinguishable from a clean repo. Success = a test that points DATA_SAFETY_SCAN_REF at an unresolvable ref and asserts a NON-zero exit, plus a test that stubs the export away and asserts the opaque-token class fails rather than skips, plus the existing 140 stay green. Related but separate: ds_scan_ref re-runs the whole module per branch, redoing the 101 MB export walk ~11x per turn; scope it to the classes that need it while you are in here."
+      },
+      {
+        "turn": 11,
+        "text": "IMPLEMENTED on idea/scan-fails-closed (c3cf051). ADR-015. All three parts of the turn-8 brief taken, plus the efficiency note.\n\nREPRO FIRST, on main, exactly as the finding stated: DATA_SAFETY_SCAN_REF=refs/heads/no-such-branch-xyz python -m unittest tests.test_data_safety exits 0 with 'OK (skipped=6)'. Against the pre-fix code the 10 new cases go 9 red / 1 green, and the one that passes is the control asserting a missing export still only SKIPS outside the gate -- i.e. the suite is not simply stricter everywhere.\n\n(1) STRICT, implied by SCAN_REF and settable as DATA_SAFETY_STRICT=1. _repo_files raises ScanCannotRun on a git error AND on an empty listing -- the second matters, a ref resolving to an empty tree is the same fail-open by another route. New _require_export raises when the export is absent or empty, so the raw-id detector can no longer be inert and green. Outside the gate both stay skips, which is what keeps make test green on a machine without the 101 MB export; that distinction is tested in both directions.\n\n(2) The gate stopped trusting the exit code. The suite prints DATA-SAFETY-RECEIPT ref= files= ran= skipped= failed= from a gate runner in __main__, and ds_receipt_ok refuses on absent line / files=0 / ran=0 / failed!=0. push_gate.sh therefore invokes 'python -m tests.test_data_safety', not '-m unittest' -- only the former prints a receipt, so the old invocation cannot silently satisfy the gate.\n\n(3) Scoped per the note: under SCAN_REF only the four REF_AWARE classes run. HONEST SIZE OF THAT WIN -- 21 tests / 5.0 s -> 16 / 4.6 s per ref, not the big saving the note hoped for, because the opaque detector's own streamed export pass dominates and is genuinely per-ref (candidate tokens differ per branch).\n\nMEASURED ON THE REAL GATE, not only in the harness: ds_scan_ref against this repo's twelve real branches now returns a concrete enumerated count each (83..126, all GREEN), and refs/heads/zz-nope is RED with files=0 ran=7 failed=3.\n\nTESTS. tests/test_push_gate.py::TheGateRefusesAScanThatDidNotRun drives the REAL push_all_branches against a real local remote with three stub scanners (no receipt / files=0 / ran=0) and asserts on what LANDED, with the honest scanner as negative control. ::TheSuiteFailsClosedWhenItCannotRun drives the real suite at an unresolvable ref and at an emptied export and asserts the receipt fields. The existing stub scanner had to learn to print a receipt, which is the contract made visible.\n\nONE SELF-INFLICTED FINDING WORTH KEEPING: the i0026 README rewrite wrote the presigned-signature literal into a tracked file and RepoCarriesNoPresignedSignature went red on my own edit. Fixed by naming the parameter instead of quoting it; noted in the README.\n\nGATE: make test 152 OK (main is 140), make all green (301 claims), router.gates GREEN 4 pass / 2 warn / 0 fail, router.verify PASS on 44 numerals across 5 artifacts. No headline number touched, so no number-verifier.\n\nNOT FIXED, deliberately: i0018 (the 16-char floor -- a detector that provably RUNS still cannot match the 11-char ids it was written for) and i0023 (bare branch names at git push). The ls-tree call gained its -- separator because I rewrote that line anyway; i0023 is otherwise untouched and still accepted."
       }
     ]
   },
@@ -451,13 +455,17 @@
     "title": "test_push_gate.py defines a test class below its __main__ guard, so it is skipped on direct execution",
     "kind": "code",
     "why": "tests/test_push_gate.py:257 on idea/integrate-turn7. 'if __name__ == \"__main__\": unittest.main()' sits above class OpaqueTokenScanIsRefAware, so running the file directly exits before that class is defined and reports OK having never run the tests that pin the bug commit 4da8330 fixed. make test uses discovery and does collect them (14 tests), so this is not currently a live gap -- it is a silent-non-collection trap and it is inconsistent with every other new test file in the branch, all of which put the guard last. Found by the code-review skill and the python-reviewer independently.",
-    "status": "accepted",
+    "status": "implemented",
     "branch": null,
     "created_turn": 8,
     "notes": [
       {
         "turn": 8,
         "text": "Trivial and mechanical, so it skips evaluate: move the __main__ guard to the bottom of the file. Success = 'python tests/test_push_gate.py' reports the same test count as 'python -m unittest tests.test_push_gate' (14), asserted by a test that compares the two counts, or at minimum by the reviewer running both."
+      },
+      {
+        "turn": 11,
+        "text": "Fixed in c3cf051 alongside i0022, because the new test classes go in that same file and appending below a mid-file __main__ guard would have compounded it. MEASURED BEFORE AND AFTER: with the guard where it was, 'python tests/test_push_gate.py' collected 23 of 26 and reported OK; moved to the bottom, both invocations report 26. Two things the turn-8 note did not anticipate. (a) Moving the guard EXPOSED a second defect -- direct execution puts tests/ on sys.path, not the repo root, so OpaqueTokenScanIsRefAware's 'from tests import test_data_safety' errored where discovery succeeded. Fixed with a sys.path bootstrap at the top of the file. (b) The obvious assertion is wrong: source.index('if __name__ == \"__main__\":') matches the literal inside the test that searches for it, and my first version passed for that reason. Rewritten against the ast parse tree -- exactly one top-level __main__ guard, and its lineno greater than every top-level ClassDef's. Mutation-checked by moving the guard back: discovery goes red and direct execution silently drops to 23."
       }
     ]
   },
@@ -481,13 +489,17 @@
     "title": "loop/README.md still says raw identifiers are uncovered and greps are manual, on the same branch that closes i0005",
     "kind": "presentation",
     "why": "loop/README.md:86 on idea/integrate-turn7 says raw ids 'are covered by backlog i0005; until that lands, the review turn greps for them by hand', while that same branch implements i0005, flags it implemented, and has docs/DATA-SAFETY-DEBT.md declare it closed. The doc and the code disagree about which control exists. This is exactly the i0013 class -- a safety sentence that is wrong in the reassuring direction is what lets the next review turn stop looking. Found by the code-review skill.",
-    "status": "accepted",
+    "status": "implemented",
     "branch": null,
     "created_turn": 8,
     "notes": [
       {
         "turn": 8,
         "text": "DATA-SAFETY (documentation half), and it must land in the SAME commit as whichever fix settles i0022 -- the sentence has to describe the control that actually exists at that moment. Fix: restate loop/README.md:86 to say raw identifiers are covered by the opaque-token detector, name its real limits (the length floor of i0018, and the fail-open of i0022 until that is fixed), and drop the 'the review turn greps by hand' instruction once it is no longer the control. Success = a grep for the stale sentence returns nothing and docs/DATA-SAFETY-DEBT.md, loop/README.md and tests/test_data_safety.py's docstrings agree on which classes are detected."
+      },
+      {
+        "turn": 11,
+        "text": "Landed in the SAME commit as i0022 (c3cf051), which is what its own note required. loop/README.md's safety section was restated, not deleted: it now enumerates what each detector catches, says the raw-identifier check EXISTS (i0005, landed) rather than 'is covered by backlog i0005; until that lands the review turn greps by hand', and drops the grep-by-hand instruction as the control. It also states the live limit in the reassuring-direction-safe way: the extractor needs 16 characters and the three ids it was written for are 11, so _common.md's manual grep -c rule is still doing the work for short ids until i0018 lands. New paragraph on fail-closed scanning. docs/DATA-SAFETY-DEBT.md gained the matching two bullets -- one naming the 16-char narrowness of the i0005 closure, one recording the i0022 fail-open as fixed under ADR-015. All three sources (both docs and the suite docstring) now agree on which classes are detected. WHILE WRITING IT the presigned-signature check went red on my own draft, which had quoted the parameter literally; the README now names it instead and says so."
       }
     ]
   }
