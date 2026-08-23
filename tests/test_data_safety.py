@@ -46,11 +46,22 @@ import json
 import os
 import re
 import subprocess
+import sys
 import unittest
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RESULTS = os.path.join(REPO_ROOT, "results")
 EXPORT = os.path.join(REPO_ROOT, "export")
+
+# `python tests/test_data_safety.py` -- the invocation this file's own __main__
+# guard invites -- puts tests/ on sys.path and NOT the repo root, so `router` is
+# unimportable and this suite reaches a different verdict than `python -m`
+# does. Two invocations of one file may not disagree about whether the repo is
+# safe to push, so the path is repaired here rather than in the guard: an
+# import that only resolves under one runner is the bug, not the runner.
+# See tests/test_data_safety_invocation.py, which asserts the two agree.
+if REPO_ROOT not in sys.path:
+    sys.path.insert(0, REPO_ROOT)
 
 #: When set to a git ref, the two repo-file checks read that ref's tree instead
 #: of the working tree. The loop's push gate uses this to scan each branch it is
@@ -526,11 +537,16 @@ class RepoCarriesNoOpaqueExportToken(unittest.TestCase):
 
     @staticmethod
     def _exempt_arm_ids():
-        """The observed arm identifiers, read from the pricing table, not copied."""
-        try:
-            from router.pricing import OBSERVED_ARMS
-        except Exception:                       # pragma: no cover - import guard
-            return frozenset()
+        """The observed arm identifiers, read from the pricing table, not copied.
+
+        The import is deliberately UNGUARDED. Every arm id occurs in the export
+        by construction, so this table is a correctness input to the check, not
+        an optimisation: swallowing an ImportError here does not degrade the
+        detector, it reports nine legitimate identifiers as leaks. A leak
+        detector that is wrong about what a leak is has no verdict to give.
+        """
+        from router.pricing import OBSERVED_ARMS
+
         return frozenset(OBSERVED_ARMS)
 
     @classmethod
