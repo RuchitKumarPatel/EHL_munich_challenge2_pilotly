@@ -1,9 +1,9 @@
 {
   "turn": 9,
-  "cost_usd": 32.3979,
-  "last_turn_type": "review",
+  "cost_usd": 34.2804,
+  "last_turn_type": "merge",
   "started": "2026-08-22T23:15:23+00:00",
-  "updated": "2026-08-23T01:44:00+00:00",
+  "updated": "2026-08-23T01:44:03+00:00",
   "last_review_sha": "9680073b9ff4f7de7609cd5533bcdd0b62549c33",
   "last_review_turn": 8
 }
