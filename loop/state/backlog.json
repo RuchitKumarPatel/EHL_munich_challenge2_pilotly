@@ -306,10 +306,15 @@
     "title": "backlog.py turns a corrupt state file into an empty string the supervisor trusts as a scalar",
     "kind": "code",
     "why": "loop/backlog.py:57-66 load_backlog/load_state call json.loads with no handler, and next_id/_by_status index 'id'/'status' without .get(). run.sh captures TURN and TYPE by command substitution with no exit-code check under 'set -uo pipefail' (no -e), so any traceback becomes TYPE='' and the loop stops reporting 'unknown turn type' instead of the real cause. The atomic-write path in _write_json is sound and was verified -- this is only the read side. Found by the python-reviewer agent.",
-    "status": "proposed",
-    "branch": null,
+    "status": "implemented",
+    "branch": "idea/backlog-state-fail-closed",
     "created_turn": 4,
-    "notes": []
+    "notes": [
+      {
+        "turn": 12,
+        "text": "TURN 12 REVIEW: flag corrected on main to match measured reality, the same correction e597b1c made for the other six. This idea is built and green on idea/backlog-state-fail-closed, and main's copy still read 'proposed' with branch null because an implement turn writes its status to its own branch only. Verified not by reading the branch's own note but by running the gate on idea/integrate-turn12, which contains this branch: make test 230 OK (main is 140), router.gates GREEN 4 pass / 2 warn / 0 fail, router.verify PASS on 44 numerals across 5 artifacts, and the per-ref data-safety scan green with receipt files=133 ran=32 skipped=0 failed=0."
+      }
+    ]
   },
   {
     "id": "i0016",
@@ -391,13 +396,17 @@
     "title": "router/textclf hardcodes a dead /tmp session-uuid scratch path in all four modules",
     "kind": "code",
     "why": "router/textclf/{encode,probe,evalpool,finetune}.py each set SP to an absolute /tmp/claude-1000/<session-uuid>/scratchpad path from the session that produced the negative result. That directory is gone, so the postmortem's measurements cannot be reproduced by anyone reading it -- which is most of the value of landing a negative result on main. Also loads emb_modernbert_L1024.npy from there. Found by the turn-8 review turn.",
-    "status": "proposed",
-    "branch": null,
+    "status": "implemented",
+    "branch": "idea/textclf-scratch-paths",
     "created_turn": 8,
     "notes": [
       {
         "turn": 8,
         "text": "Turn-8 review: also flagged by the code-review skill and the python-reviewer. router/textclf/probe.py does 'from evalpool import *' and resolves it against that dead /tmp path, so the README's documented reproduce command works only while that directory happens to survive. If i0018 lowers the opaque-token floor to 8 characters, the session uuid in these paths becomes a candidate -- it is not export content (verified: it is a Claude Code session id), so either fix the paths or let the detector's export check clear it."
+      },
+      {
+        "turn": 12,
+        "text": "TURN 12 REVIEW: flag corrected on main to match measured reality, the same correction e597b1c made for the other six. This idea is built and green on idea/textclf-scratch-paths, and main's copy still read 'proposed' with branch null because an implement turn writes its status to its own branch only. Verified not by reading the branch's own note but by running the gate on idea/integrate-turn12, which contains this branch: make test 230 OK (main is 140), router.gates GREEN 4 pass / 2 warn / 0 fail, router.verify PASS on 44 numerals across 5 artifacts, and the per-ref data-safety scan green with receipt files=133 ran=32 skipped=0 failed=0."
       }
     ]
   },
@@ -436,6 +445,10 @@
       {
         "turn": 11,
         "text": "TURN 12: flag corrected on main to match reality. This idea is BUILT, tested and green on its branch, and main's copy still read 'accepted' only because an implement turn writes its status to its own branch and never to main. That staleness is not cosmetic -- plan_turn reads main, so six false 'accepted' entries made the supervisor dispatch an implement turn every time from turn 11 onward while the merge turn that would land them stayed unreachable. See i0031 (filed on idea/integrate-turn12) for the measurement and the two candidate durable fixes. NOT MERGED BY THIS TURN, on purpose: the merge turn runs its own gate, and an implement turn moving main past a gate it did not run is the one failure mode that can damage the branch the team presents from."
+      },
+      {
+        "turn": 12,
+        "text": "READ THIS BEFORE MERGING ANYTHING — turn-12 review. MERGE idea/integrate-turn12, NOT the individual branches this backlog names. MEASURED: idea/integrate-turn12 already contains all EIGHT turn-11/12 branches (opaque-token-floor, ref-name-injection, verify-missing-artifact, scan-fails-closed, backlog-state-fail-closed, verify-prose-stripper, textclf-scratch-paths, data-safety-invocation), and it is green on every gate, verified independently this turn in a throwaway worktree rather than taken from its own note: make test 230 OK (main is 140), make-independent router.gates GREEN 4 pass / 2 warn / 0 fail, router.verify PASS on 44 numerals across 5 artifacts, per-ref data-safety scan green with receipt files=133 ran=32 skipped=0 failed=0, and the i0022 repro itself now fails closed (DATA_SAFETY_SCAN_REF at an unresolvable ref exits 1 with files=0 failed=3, where before it printed OK skipped=6). ADR headings on the branch run 001..022 with no duplicate. NOW THE TRAP, and it is the same one that nearly lost i0018..i0026 at turn 9: main's copy of this backlog is BEHIND the branch's. main has no i0027, i0028, i0029, i0030, i0031, and none of i0032..i0035 which this review turn filed on the branch because filing them on main would have collided with the branch's own i0027+. When loop/state/backlog.json conflicts on this merge, resolve it as a UNION, id by id, exactly as turn 9 did -- take the branch side for i0027 and above, and keep main's turn-12 note edits on i0015, i0018, i0019, i0020, i0022, i0023, i0024, i0025 and i0026. Do NOT take either side wholesale in either direction."
       }
     ]
   },
@@ -486,13 +499,17 @@
     "title": "router.verify's prose stripper leaks numerals from an unclosed markdown fence and from a > inside a quoted attribute",
     "kind": "code",
     "why": "router/verify.py:161 and :160 on idea/integrate-turn7. (1) _FENCE_RE requires a CLOSING fence, and unlike the HTML path there is no open-fence-at-EOF fallback -- verify.prose('...\\n```bash\\nrun-command --threshold 999\\n','markdown') leaves 999 in the scanned prose, so a dropped closing fence in README.md either fails the gate for the wrong reason or mis-binds a shell literal to a small-int claim. (2) _TAG_RE is '<[^>]+>' and closes at the first > including one inside a quoted attribute: prose('<div title=\"revenue 5 > 2 loss\">only 7 remains</div>','html') leaks the 2 that no reader ever sees. (3) The percent lookahead at :260 slices a fixed 2 characters, so two spaces before a % silently disables the claim-as-fraction path and a legitimate percent reports as an orphan. All three are latent against the five shipped artifacts today (verified), none is covered by a test. Found by the python-reviewer with reproductions.",
-    "status": "proposed",
-    "branch": null,
+    "status": "implemented",
+    "branch": "idea/verify-prose-stripper",
     "created_turn": 8,
     "notes": [
       {
         "turn": 8,
         "text": "Ordinary parser hardening, goes through evaluate: all three are latent and the gate is green today. If the evaluate turn accepts, success = tests/test_verify.py gains an unclosed-fence markdown case and a >-inside-attribute HTML case, and the percent lookahead scans to the next non-space rather than slicing 2 characters."
+      },
+      {
+        "turn": 12,
+        "text": "TURN 12 REVIEW: flag corrected on main to match measured reality, the same correction e597b1c made for the other six. This idea is built and green on idea/verify-prose-stripper, and main's copy still read 'proposed' with branch null because an implement turn writes its status to its own branch only. Verified not by reading the branch's own note but by running the gate on idea/integrate-turn12, which contains this branch: make test 230 OK (main is 140), router.gates GREEN 4 pass / 2 warn / 0 fail, router.verify PASS on 44 numerals across 5 artifacts, and the per-ref data-safety scan green with receipt files=133 ran=32 skipped=0 failed=0."
       }
     ]
   },
