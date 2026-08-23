@@ -52,17 +52,32 @@ A `review` turn files what it finds as backlog entries rather than fixing anythi
 still goes through `implement` and gets a test and a gate. The one exception is dataset content in
 a tracked file, which it removes on the spot.
 
-## Nothing is pushed past a red data-safety suite
+## What the data-safety gate covers, and what it does not
 
-`push_all_branches` runs `tests/test_data_safety.py` before it contacts the remote, and pushes
-nothing at all if it is red. This is not theoretical caution. On the loop's first night,
-`bootstrap.sh` pushed every branch before any check ran, and one of them carried a postmortem
-quoting three raw identifiers straight out of `export/` — to a shared repository, for a dataset
-licensed challenge-use-only. A push cannot be taken back.
+`loop/push_gate.sh` is the one implementation of "may this ref leave this machine".
+`loop/run.sh` and `loop/bootstrap.sh` both source it; neither contains a `git push` of its own.
+It scans the working tree once, and then scans **each branch against its own tree** before
+pushing that branch — a branch is not trusted because some other branch was clean when it was
+checked out. A branch that fails is skipped and named in the log; the clean ones still go.
 
-The suite catches the placeholder shapes (`PII_*_<n>`, `<ENTITY_*_<n>>`). It does **not** catch
-raw un-redacted ids, which is why the review turn greps for them by hand and `_common.md` tells
-every turn to `grep -c` any concrete-looking token against `export/` before writing it down.
+This is not theoretical caution. On the loop's first night, `bootstrap.sh` pushed every branch
+before any check ran, and one of them carried a postmortem quoting three raw identifiers straight
+out of `export/` — to a shared repository, for a dataset licensed challenge-use-only. A push
+cannot be taken back.
+
+**Two push paths still bypass it, and saying so is the point of this section.**
+
+- `refs/entire/checkpoints/*` are exempt by name and the `entire` CLI pushes them itself. Backlog
+  `i0007`: 36 such refs are already on `origin` and carry session transcript. `.gitignore` does
+  not apply to refs and the suite never enumerates them. Containment is
+  `entire configure --local --skip-push-sessions`; removing what is already there needs a human.
+- `loop/prompts/merge.md` and `loop/prompts/deck.md` push by hand. They are told to run the
+  suite first, but that is an instruction to a model, not a gate.
+
+The suite catches the placeholder shapes (`PII_*_<n>`, `<ENTITY_*_<n>>`). Raw un-redacted ids are
+covered by backlog `i0005`; until that lands, the review turn greps for them by hand and
+`_common.md` tells every turn to `grep -c` any concrete-looking token against `export/` before
+writing it down.
 
 ## Branches
 
