@@ -31,6 +31,7 @@ from __future__ import annotations
 import contextlib
 import io
 import os
+import re
 import shutil
 import tempfile
 import unittest
@@ -171,6 +172,129 @@ class TheEscapeHatchStaysHonest(unittest.TestCase):
             unused, [],
             "NOT_A_CLAIM entries that matched nothing in any artifact -- remove "
             "them, or the allowlist stops describing the tree: %s" % (unused,))
+
+
+class TheProseStripperLeavesNothingAReaderCannotSee(unittest.TestCase):
+    """What the gate scans must be what the page shows -- no more, no less.
+
+    Three ways it was not, each reproduced against the pre-fix module before
+    the fix was written, and each LATENT against the five shipped artifacts
+    today (measured: the quote-aware tag rule changes 0 lines across all four
+    HTML artifacts, and README.md carries 0 unclosed and 0 indented fences).
+    That is the point of pinning them now -- these fire the first time a human
+    edits the deck or the README, which happens tomorrow morning.
+    """
+
+    def test_an_unclosed_fence_is_blanked_to_end_of_file(self):
+        # `_FENCE_RE` requires a CLOSING fence. The HTML path already has an
+        # open-<script>-at-EOF fallback; markdown had none, so a dropped
+        # closing fence spilled a shell command into the scanned prose.
+        text = "prose line\n```bash\nrun-command --threshold 999\n"
+        self.assertNotIn("999", verify.prose(text, "markdown"))
+
+    def test_the_prose_before_an_unclosed_fence_still_survives(self):
+        # The mirror control: blanking to EOF must not eat the document.
+        text = "the AUPRC is 0.4160\n```bash\nrun-command --threshold 999\n"
+        self.assertIn("0.4160", verify.prose(text, "markdown"))
+
+    def test_an_unclosed_fence_keeps_the_line_numbering_intact(self):
+        # Every stripper in this module blanks rather than deletes, or a
+        # reported line number stops pointing at the real line.
+        text = "a\n```bash\nb\nc\n"
+        self.assertEqual(len(verify.prose(text, "markdown").split("\n")),
+                         len(text.split("\n")))
+
+    def test_a_closed_fence_does_not_swallow_what_follows_it(self):
+        # Regression control on the fix itself: the open-fence fallback must
+        # not fire on a document whose fences are balanced.
+        text = "a\n```bash\nrun --x 999\n```\nthe AUPRC is 0.4160\n"
+        out = verify.prose(text, "markdown")
+        self.assertNotIn("999", out)
+        self.assertIn("0.4160", out)
+
+    def test_an_unclosed_fence_is_reported_rather_than_silently_obeyed(self):
+        # Blanking to EOF is the conservative read of a malformed document,
+        # but it can also HIDE a real numeral that sits after the bad fence.
+        # So the gate says out loud that it stopped reading, naming the line.
+        warnings = verify.unclosed_fences("a\nb\n```bash\nc\n", "markdown")
+        self.assertEqual(warnings, [3])
+        self.assertEqual(verify.unclosed_fences("a\n```\nb\n```\n", "markdown"), [])
+
+    def test_a_gt_inside_a_quoted_attribute_does_not_leak_a_numeral(self):
+        # `<[^>]+>` closes at the FIRST `>`, including one inside a quoted
+        # attribute value, so the tail of the tag was scanned as prose.
+        out = verify.prose('<div title="revenue 5 > 2 loss">only 7 remains</div>',
+                           "html")
+        self.assertNotIn("2", out)
+        self.assertIn("7", out)
+
+    def test_the_same_holds_for_a_single_quoted_attribute(self):
+        out = verify.prose("<div title='a > 2 b'>only 7 remains</div>", "html")
+        self.assertNotIn("2", out)
+        self.assertIn("7", out)
+
+    def test_ordinary_markup_still_strips(self):
+        # The mirror control: a quote-aware tag rule that stopped matching
+        # plain tags would leak every attribute in the deck instead.
+        out = verify.prose('<p class="lead">the AUPRC is 0.4160</p>', "html")
+        self.assertNotIn("lead", out)
+        self.assertIn("0.4160", out)
+
+    def test_the_quote_aware_rule_changes_nothing_on_the_shipped_artifacts(self):
+        # The claim that this fix is HARDENING and not a behaviour change,
+        # asserted rather than asserted-in-a-note.
+        old = re.compile(r"<[^>]+>")
+        for rel, kind, _locale in [a[:3] for a in verify.ARTIFACTS]:
+            path = os.path.join(REPO_ROOT, rel)
+            if kind != "html" or not os.path.isfile(path):
+                continue
+            with open(path, encoding="utf-8") as fh:
+                text = fh.read()
+            text = verify._COMMENT_RE.sub(verify._blank, text)
+            text = verify._SCRIPTISH_RE.sub(verify._blank, text)
+            text = verify._OPEN_SCRIPTISH_RE.sub(verify._blank, text)
+            self.assertEqual(old.sub(verify._blank, text),
+                             verify._TAG_RE.sub(verify._blank, text),
+                             "%s: the quote-aware tag rule changed what is "
+                             "scanned; that is a real change, not hardening" % rel)
+
+
+class ThePercentLookaheadScansRatherThanSlices(unittest.TestCase):
+    """Shares live in claims.json as fractions and are quoted as percents.
+
+    The binding is only offered when the numeral is FOLLOWED BY `%` -- widen
+    that and the tolerance binds anything. The old test was `line[end:end+2]`,
+    a fixed two-character slice, so two spaces before the sign silently
+    disabled the fraction path and a legitimate percent reported as an orphan.
+    """
+
+    NUMERIC = {"policy.refused.gross_share": 0.4098}
+
+    def _keys(self, line):
+        bindings, orphans, _used = verify.scan_artifact(
+            line, "scratch.md", "markdown", "en", self.NUMERIC)
+        return [b.keys for b in bindings], [o.literal for o in orphans]
+
+    def test_a_percent_written_tight_binds(self):
+        bound, _orphans = self._keys("the share is 41.0%")
+        self.assertEqual(bound, [("policy.refused.gross_share",)])
+
+    def test_a_percent_written_with_several_spaces_still_binds(self):
+        # This is the defect: 41.0 and the % separated by more than one space.
+        bound, orphans = self._keys("the share is 41.0   %")
+        self.assertEqual(orphans, [])
+        self.assertEqual(bound, [("policy.refused.gross_share",)])
+
+    def test_a_percent_written_with_a_tab_still_binds(self):
+        bound, _orphans = self._keys("the share is 41.0\t%")
+        self.assertEqual(bound, [("policy.refused.gross_share",)])
+
+    def test_a_numeral_with_words_before_the_percent_sign_does_not_bind(self):
+        # The control that keeps the widening honest: only WHITESPACE may sit
+        # between the numeral and the sign, or "41.0 of the total 90%" would
+        # bind 41.0 as a fraction and the gate would stop finding orphans.
+        _bound, orphans = self._keys("the share is 41.0 of the total")
+        self.assertEqual(orphans, ["41.0"])
 
 
 if __name__ == "__main__":
