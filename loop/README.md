@@ -67,6 +67,10 @@ a tracked file, which it removes on the spot.
 It scans the working tree once, and then scans **each branch against its own tree** before
 pushing that branch — a branch is not trusted because some other branch was clean when it was
 checked out. A branch that fails is skipped and named in the log; the clean ones still go.
+It also validates every branch **name** before that name becomes a git argument, and pushes the
+sha it scanned rather than re-resolving the name. `git update-ref` will happily create a branch
+called `--receive-pack=/tmp/x/pwn.sh`, and `git push` parses such a name as an option and runs
+the program — measured, not argued. ADR-017.
 
 This is not theoretical caution. On the loop's first night, `bootstrap.sh` pushed every branch
 before any check ran, and one of them carried a postmortem quoting three raw identifiers straight
