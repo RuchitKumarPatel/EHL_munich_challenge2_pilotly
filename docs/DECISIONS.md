@@ -465,3 +465,60 @@ reintroduce exactly the defect this ADR closes. Until that exists, the project q
 `refusal.mde_best_powered_arm_pair.pp` is an unweighted arm-pair rate contrast — a different
 estimand on a different weighting. Asserting it would replace one untraceable comparison with
 another.
+
+---
+
+## ADR-016 — The opaque-token detector uses two windows, because one floor cannot serve both
+
+**Status:** Accepted
+
+**The defect (backlog i0018).** `RepoCarriesNoOpaqueExportToken` was written to catch the class of
+leak that a shape-matching detector cannot see: a raw, un-redacted identifier copied out of a
+trajectory. Its docstring cites the three such identifiers removed in commit `af4e78b` as the
+incident it prevents. It matched none of them. They are 11 characters long; its window started at
+16. The class was green and detected nothing of its stated class — the same failure mode as a
+detector that skips instead of failing, and worse than having no detector, because a green control
+is what lets the next reviewer stop looking.
+
+**The obvious fix was measured and rejected.** Lowering the single window's floor from 16 to 8
+takes the repo from 27 candidates to 88, and **18 of those 88 occur in the export** — model
+identifiers, feature-column names, dates, all colliding with the corpus by coincidence. The corpus
+test would be permanently red for reasons that are not leaks, which is how a control gets muted.
+
+**Decision — two windows with different rules.**
+
+| window | length | charset | extra rejections |
+|---|---|---|---|
+| long | 16–64 | `[A-Za-z0-9_-]` | — |
+| compact | 8–15 | `[A-Za-z0-9]` (no separator) | `word1024` / `1024word`; `<digits>x<digits>` |
+
+The separator exclusion is the whole trick and it was not guessed: **every one of the 18 false
+positives carries a `-` or a `_`**. A raw identifier is not hyphenated, so excluding separators
+below 16 costs no real detection and drops the false positives from 18 to 1. The two remaining
+rejections are shape rules, measured against this tree:
+
+- `word1024` / `1024word` is a name with a size attached, not an identifier. Deliberately narrow —
+  it fires only on a *single* letter/digit boundary, so `L1024tokens` stays a candidate. Widening
+  it to any letter/digit mixture would discard exactly the shape the compact window exists for.
+- `<digits>x<digits>` is a pixel dimension. `1920x1080` sits in `loop/JOURNAL.md` **and** in the
+  export, by pure coincidence, and it was the last false positive left.
+
+Both are shape rules rather than allowlist entries, so neither can silently grow the way
+`DOCUMENTARY` can — which is the same reasoning as ADR-010.
+
+**Measured after the change.** 36 candidates over 126 files, 0 of which the export knows; runtime
+unchanged at ~3 s, because the export scan is one streamed pass regardless of set size. `make
+test` 151 OK, `make all` green (301 claims), `router.gates` GREEN 4 pass / 2 warn / 0 fail.
+
+**The test that keeps this honest.** `OpaqueDetectorCatchesTheIncidentItWasWrittenFor` replays the
+incident instead of asserting that it is handled: it reads both sides of `af4e78b` out of history,
+takes every token that commit removed, keeps the ones the export actually knows (5 of 5), and
+asserts each is caught by one of this file's detectors — two by the placeholder shapes, three by
+the opaque windows. Before this change it failed naming three masked shapes. No token is written
+into any tracked file: the fixture is the commit, and failures print masked shapes only, per
+ADR-010.
+
+**Known limit, recorded rather than fixed.** The compact window still requires both a letter and a
+digit, so a purely alphabetic identifier of any length is invisible to it. Nothing in this corpus
+has that shape, so lowering that bar now would buy false positives and no detection; the day one
+appears, this is the line to revisit.
