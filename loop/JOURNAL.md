@@ -97,3 +97,4 @@ turn 13 (merge): idea/integrate-turn12 MERGED to main as 024d108 -- eight branch
 - **turn 26** · `implement` · 07:40 · exited rc=126 ($0.0) - see loop/logs/
 - **turn 27** · `implement` · 07:40 · exited rc=126 ($0.0) - see loop/logs/
 - **turn 28** · `review` · 07:40 · exited rc=126 ($0.0) - see loop/logs/
+- **turn 29** · `implement` · 07:40 · exited rc=126 ($0.0) - see loop/logs/
