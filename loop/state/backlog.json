@@ -466,13 +466,21 @@
     "title": "router.verify's prose stripper leaks numerals from an unclosed markdown fence and from a > inside a quoted attribute",
     "kind": "code",
     "why": "router/verify.py:161 and :160 on idea/integrate-turn7. (1) _FENCE_RE requires a CLOSING fence, and unlike the HTML path there is no open-fence-at-EOF fallback -- verify.prose('...\\n```bash\\nrun-command --threshold 999\\n','markdown') leaves 999 in the scanned prose, so a dropped closing fence in README.md either fails the gate for the wrong reason or mis-binds a shell literal to a small-int claim. (2) _TAG_RE is '<[^>]+>' and closes at the first > including one inside a quoted attribute: prose('<div title=\"revenue 5 > 2 loss\">only 7 remains</div>','html') leaks the 2 that no reader ever sees. (3) The percent lookahead at :260 slices a fixed 2 characters, so two spaces before a % silently disables the claim-as-fraction path and a legitimate percent reports as an orphan. All three are latent against the five shipped artifacts today (verified), none is covered by a test. Found by the python-reviewer with reproductions.",
-    "status": "proposed",
-    "branch": null,
+    "status": "implemented",
+    "branch": "idea/verify-prose-stripper",
     "created_turn": 8,
     "notes": [
       {
         "turn": 8,
         "text": "Ordinary parser hardening, goes through evaluate: all three are latent and the gate is green today. If the evaluate turn accepts, success = tests/test_verify.py gains an unclosed-fence markdown case and a >-inside-attribute HTML case, and the percent lookahead scans to the next non-space rather than slicing 2 characters."
+      },
+      {
+        "turn": 11,
+        "text": "TURN 14 (implement): taken as ACCEPTED by the implement turn itself, because the accepted queue was empty -- all seven of i0015/i0018/i0019/i0022/i0023/i0024/i0026 are built and already integrated onto idea/integrate-turn12, and no evaluate turn has run since. Of the four remaining proposed entries this is the one whose note carries reproductions rather than a hypothesis, so it is the one an implement turn can act on without guessing at scope. ALL THREE REPRODUCED ON MAIN BEFORE ANY EDIT, and all three are latent against the shipped tree exactly as the note said -- measured, not assumed: swapping the tag regex for a quote-aware one changes 0 lines across all four HTML artifacts, and README.md has 0 indented and 0 unclosed fences today. So this is hardening, not a live-bug fix, and the value is that the deck's prose gate keeps meaning what it says when a human edits README or the slides in the morning."
+      },
+      {
+        "turn": 11,
+        "text": "IMPLEMENTED on idea/verify-prose-stripper (d9f4201). ADR-020. All three defects reproduced first, red watched: 4 failures plus 1 error against the pre-fix module, 24 tests green after. (1) UNCLOSED FENCE: _FENCE_RE matched only a closed pair, so a dropped closing fence left the fenced command in the scanned prose -- blanked to EOF now, mirroring the open-<script> fallback the HTML path already carried. (2) TAG: <[^>]+> closes at the first > including one inside a quoted attribute value; the rule is quote-aware now and its three alternatives are disjoint on their first character, so it stays linear rather than swapping a correctness bug for backtracking. (3) PERCENT: the lookahead sliced a fixed 2 characters, so two spaces before the sign silently disabled the fraction path; it scans to the next non-space now. THE RESTRICTION IS THE LOAD-BEARING HALF and has its own test in the opposite direction -- only whitespace may sit between the numeral and the sign, or the tolerance starts binding numerals that are not shares and the gate quietly stops finding orphans. ONE JUDGEMENT CALL BEYOND THE BRIEF: blanking a dangling fence to EOF can HIDE a real numeral written after it, turning a fail into a quiet pass, which is the failure mode this family of fixes exists to refuse. So run() records the line and print_report emits 'WARNING - <file>:<line> unclosed fence'. Warning and not failure because a dropped fence still renders as a page a human reads, whereas an unclosed <script> is a browser-visible breakage; escalating it to BLOCKED belongs with ADR-018's Report.missing machinery and is filed as i0028 rather than done here. LATENCY MEASURED, NOT ASSUMED: substituting the quote-aware tag rule changes 0 lines across all four HTML artifacts and README.md carries 0 unclosed and 0 indented fences, so old parser and new give the IDENTICAL result on the shipped tree -- 44 bindings, 0 orphans, 0 warnings. A test re-measures the tag half on every run, so 'this is hardening' cannot rot into a false claim. GATE: make test 153 OK (main is 140), make all green (301 claims, AUPRC still 0.4159785566844733), router.gates GREEN 4 pass / 2 warn / 0 fail, router.verify PASS 44 numerals across 5 artifacts exit 0, tests.test_data_safety 21 OK. No claims key touched, so no number-verifier; no feature or join touched, so no leak-hunter."
       }
     ]
   },
@@ -490,5 +498,15 @@
         "text": "DATA-SAFETY (documentation half), and it must land in the SAME commit as whichever fix settles i0022 -- the sentence has to describe the control that actually exists at that moment. Fix: restate loop/README.md:86 to say raw identifiers are covered by the opaque-token detector, name its real limits (the length floor of i0018, and the fail-open of i0022 until that is fixed), and drop the 'the review turn greps by hand' instruction once it is no longer the control. Success = a grep for the stale sentence returns nothing and docs/DATA-SAFETY-DEBT.md, loop/README.md and tests/test_data_safety.py's docstrings agree on which classes are detected."
       }
     ]
+  },
+  {
+    "id": "i0027",
+    "title": "An unclosed code fence should BLOCK the prose gate, not warn it",
+    "kind": "code",
+    "why": "router/verify.py on idea/verify-prose-stripper. ADR-020 blanks a dangling markdown fence to end of file and prints a WARNING naming the line, because leaving it unstripped spills a shell command into the scanned prose. But blanking can also HIDE a real numeral written after the bad fence -- a fail turned into a quiet pass, which is precisely the class ADR-015 and ADR-018 exist to refuse. The right answer is the one ADR-018 already built for a missing artifact: a gate that could not read its whole declared surface has no verdict, so exit 2 BLOCKED naming the file and line. It was NOT done in turn 14 on purpose -- ADR-018 lives on the unmerged idea/integrate-turn12 and owns Report.missing plus the exit-2 path, so building a second one from main would have been a merge conflict in the same function for no gain. Do this AFTER idea/integrate-turn12 and idea/verify-prose-stripper have both landed, reusing Report.missing's machinery rather than adding a parallel one.",
+    "status": "proposed",
+    "branch": null,
+    "created_turn": 11,
+    "notes": []
   }
 ]
