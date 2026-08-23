@@ -44,7 +44,7 @@
     "title": "Land the textclf negative result and its postmortem on main",
     "kind": "evaluation",
     "why": "Evaluation rigor, and the challenge explicitly scores naming where an estimate fails. A measured negative result with a postmortem and an ADR is presentable evidence; leaving it on an unmerged branch wastes it. Success = ADR-008 and docs/POSTMORTEM-textclf.md on main with the pipeline still green, and no torch import reachable from make all.",
-    "status": "accepted",
+    "status": "implemented",
     "branch": "text-classifier-finetune",
     "created_turn": 0,
     "notes": [
@@ -59,6 +59,10 @@
       {
         "turn": 3,
         "text": "Turn 1 blocked this on a data-safety failure. Fix first, then it can merge: docs/POSTMORTEM-textclf.md section 5 quotes two placeholder serials AND three raw identifiers that appear verbatim in the export (counts 1, 7 and 2). Replace all five with non-concrete descriptions that keep the sentence's meaning -- the point being made is that redaction serials are renumbered per request, which needs no literal serial to say. Success = make test green including tests.test_data_safety, then the merge gate passes."
+      },
+      {
+        "turn": 6,
+        "text": "Turn 7. Fixed on branch text-classifier-finetune (now merged up to main, so it is a clean descendant: cff6b37 merge, af4e78b fix). Section 5 of docs/POSTMORTEM-textclf.md rewrote its Risk paragraph to name the SHAPE of both problems -- per-request placeholder serials, and opaque vendor ids surviving in memory content -- instead of quoting the five tokens that proved them. Watched tests.test_data_safety fail first on the merged branch ({'docs/POSTMORTEM-textclf.md': 2 placeholder offenders}), then pass. Also ran an opaque-token sweep (the i0005 heuristic, applied by hand) over every file this branch adds vs main: 3 candidate tokens, 0 with a nonzero occurrence count in the export. Gate: make test 82 OK, make all green (301 claims), router.gates GREEN 4 pass / 2 warn / 0 fail. No headline number changed, so no number-verifier. Confirmed no torch reachable from make all -- grep textclf Makefile is 0, and router/textclf/* is imported by nothing the pipeline runs. docs/DATA-SAFETY-DEBT.md item 1 updated to say this closes the TREE and not the HISTORY: 24e7469 is still on origin with the original paragraph, which stays i0006's job and a human's call. Merge turn: this branch is now a fast-forward of main."
       }
     ]
   },
