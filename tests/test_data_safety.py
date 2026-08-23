@@ -767,8 +767,13 @@ class OpaqueDetectorCatchesTheIncidentItWasWrittenFor(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        if not os.path.isdir(EXPORT):
-            raise unittest.SkipTest("the licensed corpus is not present")
+        # Through the shared helper, never a bare isdir: an export directory
+        # that exists and is EMPTY passes isdir and then answers "the corpus
+        # knows none of these tokens", which reads here as the fixture having
+        # stopped reproducing the incident. `_require_export` is the one place
+        # that knows an unreadable corpus is a skip outside the gate and RED
+        # under STRICT, and this control is worthless without that distinction.
+        _require_export()
         before = cls._at(cls.FIXTURE_COMMIT + "^")
         after = cls._at(cls.FIXTURE_COMMIT)
         if before is None or after is None:
