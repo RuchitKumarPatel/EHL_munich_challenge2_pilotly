@@ -34,8 +34,8 @@ The supervisor picks the turn type from the queue. No model discretion is involv
 in `loop/backlog.py::plan_turn`:
 
 ```
-turn % DECK_EVERY == 0    ->  deck        rebuild the slides from claims.json
 turn % REVIEW_EVERY == 0  ->  review      quality + security over what landed since the last one
+turn % DECK_EVERY == 0    ->  deck        rebuild the slides from claims.json
 any implemented           ->  merge       second-opinion the gate, then move main
 any accepted              ->  implement   build it test-first on idea/<slug>
 any proposed              ->  evaluate    judge one idea properly, accept/reject/park
@@ -48,21 +48,44 @@ exactly the night it matters. `merge` outranks `implement` so `main` keeps movin
 every idea branch a clean descendant of `main` and every merge a simple one. `council` is last
 because it is by far the most expensive turn type — it only fires when the queue is genuinely dry.
 
+**A turn that satisfies both cadences goes to `review`, and the deck runs on the next turn
+instead.** A stale deck costs one turn; a skipped review costs the night. Review used to lose
+that tie, and because a tie recurs on exactly the turns where `DECK_EVERY` divides `REVIEW_EVERY`,
+review then never fired at all for `(5,10)`, `(4,4)`, `(5,5)` or `(3,6)` — the shipped `(5,4)`
+worked by luck. The deferral matters just as much: without it, `DECK_EVERY == REVIEW_EVERY` would
+starve the deck the same way. Deck staleness is bounded at `DECK_EVERY + 1` turns; both halves are
+pinned by `tests/test_backlog_plan.py`. Setting either cadence to `0` disables it.
+
 A `review` turn files what it finds as backlog entries rather than fixing anything, so every fix
 still goes through `implement` and gets a test and a gate. The one exception is dataset content in
 a tracked file, which it removes on the spot.
 
-## Nothing is pushed past a red data-safety suite
+## What the data-safety gate covers, and what it does not
 
-`push_all_branches` runs `tests/test_data_safety.py` before it contacts the remote, and pushes
-nothing at all if it is red. This is not theoretical caution. On the loop's first night,
-`bootstrap.sh` pushed every branch before any check ran, and one of them carried a postmortem
-quoting three raw identifiers straight out of `export/` — to a shared repository, for a dataset
-licensed challenge-use-only. A push cannot be taken back.
+`loop/push_gate.sh` is the one implementation of "may this ref leave this machine".
+`loop/run.sh` and `loop/bootstrap.sh` both source it; neither contains a `git push` of its own.
+It scans the working tree once, and then scans **each branch against its own tree** before
+pushing that branch — a branch is not trusted because some other branch was clean when it was
+checked out. A branch that fails is skipped and named in the log; the clean ones still go.
 
-The suite catches the placeholder shapes (`PII_*_<n>`, `<ENTITY_*_<n>>`). It does **not** catch
-raw un-redacted ids, which is why the review turn greps for them by hand and `_common.md` tells
-every turn to `grep -c` any concrete-looking token against `export/` before writing it down.
+This is not theoretical caution. On the loop's first night, `bootstrap.sh` pushed every branch
+before any check ran, and one of them carried a postmortem quoting three raw identifiers straight
+out of `export/` — to a shared repository, for a dataset licensed challenge-use-only. A push
+cannot be taken back.
+
+**Two push paths still bypass it, and saying so is the point of this section.**
+
+- `refs/entire/checkpoints/*` are exempt by name and the `entire` CLI pushes them itself. Backlog
+  `i0007`: 36 such refs are already on `origin` and carry session transcript. `.gitignore` does
+  not apply to refs and the suite never enumerates them. Containment is
+  `entire configure --local --skip-push-sessions`; removing what is already there needs a human.
+- `loop/prompts/merge.md` and `loop/prompts/deck.md` push by hand. They are told to run the
+  suite first, but that is an instruction to a model, not a gate.
+
+The suite catches the placeholder shapes (`PII_*_<n>`, `<ENTITY_*_<n>>`). Raw un-redacted ids are
+covered by backlog `i0005`; until that lands, the review turn greps for them by hand and
+`_common.md` tells every turn to `grep -c` any concrete-looking token against `export/` before
+writing it down.
 
 ## Branches
 
@@ -107,6 +130,13 @@ Whichever hits first, from `loop/config.env`: wall clock (`LOOP_HOURS`), turn co
 (`LOOP_MAX_SEVEN_DAY_PCT`), the `.loop-stop` kill switch, or three consecutive turns that changed
 neither the queue nor any branch. Each turn also has its own `timeout` — INT first so the result
 json still gets flushed, SIGKILL 60s later — so a hung turn costs one slot rather than the night.
+
+A seventh condition is the one you hope never fires: `loop/state/state.json` not yielding a
+number for `cost_usd`. The supervisor stops rather than continue, because it cannot know what it
+has spent. That file is written by the turn agents, so the supervisor treats it as untrusted
+input throughout — every `python -c` in `run.sh` is single-quoted and takes its values from
+argv, and `tests/test_supervisor_input.py` fails the build if one is written any other way.
+See ADR-012.
 
 ## Ultracode
 

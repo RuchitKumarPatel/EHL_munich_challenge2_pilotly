@@ -3,14 +3,18 @@
     "id": "i0001",
     "title": "Build router.verify: check every quoted number against claims.json",
     "kind": "code",
-    "why": "Evaluation rigor. results/NUMBERS.md already claims 'what router.verify checks prose against', but router/verify.py does not exist — the prose-to-claims contract is asserted, not enforced. Success = a module that scans NUMBERS.md, README.md and presentation.html, resolves every numeric literal to a stable claims.json key, and exits non-zero on any orphan.",
-    "status": "accepted",
+    "why": "Evaluation rigor. results/NUMBERS.md already claims 'what router.verify checks prose against', but router/verify.py does not exist \u2014 the prose-to-claims contract is asserted, not enforced. Success = a module that scans NUMBERS.md, README.md and presentation.html, resolves every numeric literal to a stable claims.json key, and exits non-zero on any orphan.",
+    "status": "implemented",
     "branch": "idea/router-verify",
     "created_turn": 0,
     "notes": [
       {
         "turn": 2,
         "text": "ACCEPTED. Serves evaluation rigor (criterion 2) and presentation clarity (criterion 3): docs/CONTRACTS.md:54 and ADR-005 both assert \"any number quoted anywhere must exist in claims.json under a stable key\", and nothing enforces it. Not a rediscovered dead end -- no router/verify.py exists, `entire search` returns only this loop, docs/COST-LEVERS.md has no entry (it covers cost interventions only). No estimator-critic and no leak-hunter dispatched on purpose: the idea makes no quantitative or causal claim and touches neither router/features.py nor any cross-trajectory join.\n\nTWO CORRECTIONS TO THE IDEA AS WRITTEN -- the implement turn must take both.\n\n(1) Do NOT rebuild the NUMBERS.md half. It is already safe by construction: every numeral in it is interpolated through router/report.py `_Q.__call__` (router/report.py:783-794), which raises KeyError on a key not in claims.json. Measured this turn: 52 prose numerals in results/NUMBERS.md, 0 orphans. Scanning it again buys nothing.\n\n(2) \"Resolve every numeric literal to a claims key\" is the wrong success test -- it is simultaneously vacuous and over-strict. 28 claims carry small-int values 0..12 (corpus.n_arms=9, model.cv.folds=5, features.block_B.n_columns=4, basis.chars_per_token=4, frontier.hull.n_vertices=3, ...), so README.md's step numbers 1..6 and \"Quick start (5 minutes)\" all \"resolve\" by coincidence while carrying no claim at all. Value-matching alone cannot separate a claim numeral from a structural one.\n\nREAL SCOPE = the four git-tracked user-facing artifacts, and it is small. Measured surface with <style> and <script> stripped: README.md 11 numerals, router/console.html 10, templates/presentation.html 0 (still all FILL placeholders -- verifying it BEFORE it is filled tomorrow is exactly the right time), site/index.html 0.\n\nPLAN.\n- New module router/verify.py, entry `python -m router.verify`. Reads results/claims.json plus the four artifacts. Exit 0 clean, 1 on orphan, 2 when claims.json is missing (mirror router/gates.py's exit contract).\n- Scan text nodes and markdown prose ONLY, never <style> or <script>. Measured justification: the script bodies hold 183 / 278 / 60,405 literals (console.html / site/index.html / site/data.js) of chart geometry and row data, and every single one that \"matched\" a claim was a coincidental 0/1/2. Scanning them is pure noise.\n- LOCALE IS THE ONE NON-OBVIOUS BIT. router/console.html is GERMAN. Line 354 reads \"die MDE liegt bei 11,4 pp\" -- that is refusal.mde_best_powered_arm_pair.pp = 11.4 written with a German decimal comma, and a naive parser reads it as 114 and reports a false orphan. The parser must accept BOTH the German decimal comma (11,4) and the English thousands comma (10,845), with a stated disambiguation rule.\n- Escape hatch for genuinely non-claim numerals (slide numbers \"01 -- Frontier\", Python \"3.10\", the year 2026): a NOT_A_CLAIM allowlist, one justification string per entry, size-capped and asserted by a test. Copy the DOCUMENTARY idiom verbatim from tests/test_data_safety.py:271-317 (cap 8, each entry must carry a real justification).\n- Do NOT write to site/ -- a hook blocks it. verify only reads and reports there.\n\nSUCCESS MEASUREMENT (all four required).\n(a) `.venv/bin/python -m router.verify` exits 0 on the current tree.\n(b) It binds router/console.html's \"11,4\" to refusal.mde_best_powered_arm_pair.pp and its \"1000\" to corpus.n_trajectories, and prints the binding.\n(c) NEGATIVE CONTROL, without which the check is unfalsifiable: perturb one number in a scratch copy of router/console.html, and verify exits non-zero naming file, line and the offending literal.\n(d) tests/test_verify.py covers both directions and skips via unittest.SkipTest when results/claims.json is absent -- the tests/test_invariants.py:47-58 idiom -- so `make test` stays green on a clean checkout.\n\nSIZE: one module (~200 lines) plus one test file. Needs no `make all` -- the generated artifacts already exist on disk. Comfortably one 40-minute turn."
+      },
+      {
+        "turn": 6,
+        "text": "IMPLEMENTED on idea/router-verify (83118f2). router/verify.py + tests/test_verify.py + a `make verify` target + ADR-009 + the CONTRACTS.md sentence that now names both enforcers.\n\nALL FOUR SUCCESS CRITERIA FROM TURN 2 MET, MEASURED.\n(a) `.venv/bin/python -m router.verify` exits 0 on the current tree: 41 numerals across 5 artifacts, 0 orphans (README.md 0 after the allowlist, router/console.html 5, presentation.html 36, templates/presentation.html 0, site/index.html 0).\n(b) It binds console.html's German \"11,4\" to refusal.mde_best_powered_arm_pair.pp and its \"1000\" to corpus.n_trajectories, and prints every binding.\n(c) NEGATIVE CONTROL passes in three forms: a perturbed German numeral, a perturbed English one, and the entry point returning 1 -- each naming file, line and literal.\n(d) tests/test_verify.py, 11 tests, all skip via unittest.SkipTest when the claims table is absent. make test 93 OK (was 82), make all green, router.gates GREEN 4 pass / 2 warn / 0 fail.\n\nTWO CORRECTIONS THE TURN-2 NOTE ASKED FOR WERE BOTH TAKEN. NUMBERS.md is not rescanned (report.py _Q already raises KeyError). 'Resolve every literal to a key' was not implemented as the test -- the gate reports ORPHANS only, and ADR-009 states why: value matching cannot separate a claim numeral from a structural one.\n\nSCOPE GREW FOR A GOOD REASON. Turn 2 measured presentation.html at 0 numerals because it was still all-FILL; turn 5 built the real deck, so the live surface is 36 prose numerals there, not 0. That is where the module earned its keep.\n\nFOUR REAL BUGS THE FIRST RUN FOUND, all in presentation.html, all now bound rather than orphaned: 3.6%, 41.0% and 92.0% are PERCENT renderings of fraction claims (ope.routed.switched.spend_share, policy.refused.gross_share, recon.cache_read.share), and -3.83 is a SIGNED literal (frontier.gated_router.hull_bound_at_same_spend_pp). A naive parser reports all four as orphans. The percent rule only fires when the numeral is followed by %, or the tolerance would bind anything.\n\nMEASURED LIMIT, RECORDED HONESTLY: perturbing the console MDE from 11,4 to 11,7 is NOT caught, because 11.7 is recon.turns.per_line.claude-fable-5. The negative control uses 11,9 and the comment says why. ADR-009 carries the same limit."
       }
     ]
   },
@@ -25,13 +29,13 @@
     "notes": [
       {
         "turn": 0,
-        "text": "Already executed by a parallel session on branch text-classifier-finetune (commit 24e7469): ModernBERT fine-tune, frozen-encoder probe, arm-interaction head. Outcome NEGATIVE and adopted nothing — ADR-008 plus docs/POSTMORTEM-textclf.md. corr(Delta_hat, real stratum gap) = +0.042 against a design-based sonnet-opus contrast of +6.8pp stratum-adjusted. Do NOT rebuild this. See i0004 for landing the write-up."
+        "text": "Already executed by a parallel session on branch text-classifier-finetune (commit 24e7469): ModernBERT fine-tune, frozen-encoder probe, arm-interaction head. Outcome NEGATIVE and adopted nothing \u2014 ADR-008 plus docs/POSTMORTEM-textclf.md. corr(Delta_hat, real stratum gap) = +0.042 against a design-based sonnet-opus contrast of +6.8pp stratum-adjusted. Do NOT rebuild this. See i0004 for landing the write-up."
       }
     ]
   },
   {
     "id": "i0003",
-    "title": "Close out the single-arm mixture problem — beat it or headline the negative result",
+    "title": "Close out the single-arm mixture problem \u2014 beat it or headline the negative result",
     "kind": "evaluation",
     "why": "Evaluation rigor and the off-policy special prize. NUMBERS.md #5: at equal spend the single-arm mixture frontier reaches -3.83 pp while the gated router reaches +0.76 pp, a 4.59 pp gap the wrong way. Either a gating rule closes it, or the honest headline of this project is the negative result, cleanly stated. Success = the frontier figure plots both curves with the gap quantified and a claims key for it.",
     "status": "proposed",
@@ -44,13 +48,13 @@
     "title": "Land the textclf negative result and its postmortem on main",
     "kind": "evaluation",
     "why": "Evaluation rigor, and the challenge explicitly scores naming where an estimate fails. A measured negative result with a postmortem and an ADR is presentable evidence; leaving it on an unmerged branch wastes it. Success = ADR-008 and docs/POSTMORTEM-textclf.md on main with the pipeline still green, and no torch import reachable from make all.",
-    "status": "accepted",
+    "status": "implemented",
     "branch": "text-classifier-finetune",
     "created_turn": 0,
     "notes": [
       {
         "turn": 0,
-        "text": "Seeded as implemented so a merge turn verifies the gate on it rather than rebuilding it. The merge turn must NOT trust this flag — run make test, make all and router.gates on the branch first, and check that make all does not require torch."
+        "text": "Seeded as implemented so a merge turn verifies the gate on it rather than rebuilding it. The merge turn must NOT trust this flag \u2014 run make test, make all and router.gates on the branch first, and check that make all does not require torch."
       },
       {
         "turn": 1,
@@ -59,6 +63,10 @@
       {
         "turn": 3,
         "text": "Turn 1 blocked this on a data-safety failure. Fix first, then it can merge: docs/POSTMORTEM-textclf.md section 5 quotes two placeholder serials AND three raw identifiers that appear verbatim in the export (counts 1, 7 and 2). Replace all five with non-concrete descriptions that keep the sentence's meaning -- the point being made is that redaction serials are renumbered per request, which needs no literal serial to say. Success = make test green including tests.test_data_safety, then the merge gate passes."
+      },
+      {
+        "turn": 6,
+        "text": "Turn 7. Fixed on branch text-classifier-finetune (now merged up to main, so it is a clean descendant: cff6b37 merge, af4e78b fix). Section 5 of docs/POSTMORTEM-textclf.md rewrote its Risk paragraph to name the SHAPE of both problems -- per-request placeholder serials, and opaque vendor ids surviving in memory content -- instead of quoting the five tokens that proved them. Watched tests.test_data_safety fail first on the merged branch ({'docs/POSTMORTEM-textclf.md': 2 placeholder offenders}), then pass. Also ran an opaque-token sweep (the i0005 heuristic, applied by hand) over every file this branch adds vs main: 3 candidate tokens, 0 with a nonzero occurrence count in the export. Gate: make test 82 OK, make all green (301 claims), router.gates GREEN 4 pass / 2 warn / 0 fail. No headline number changed, so no number-verifier. Confirmed no torch reachable from make all -- grep textclf Makefile is 0, and router/textclf/* is imported by nothing the pipeline runs. docs/DATA-SAFETY-DEBT.md item 1 updated to say this closes the TREE and not the HISTORY: 24e7469 is still on origin with the original paragraph, which stays i0006's job and a human's call. Merge turn: this branch is now a fast-forward of main."
       }
     ]
   },
@@ -67,13 +75,21 @@
     "title": "Close the raw-identifier gap in tests/test_data_safety.py",
     "kind": "code",
     "why": "Data safety. The suite matches two placeholder shapes by regex but nothing catches a raw un-redacted vendor id copied out of the export -- which is how three of them reached a shared repo on night one. Success = a test that extracts opaque-looking tokens from every tracked file and fails on any whose occurrence count in export/ is nonzero, with the existing documentary allowlist honoured.",
-    "status": "accepted",
-    "branch": null,
+    "status": "implemented",
+    "branch": "idea/data-safety-detectors",
     "created_turn": 3,
     "notes": [
       {
         "turn": 3,
         "text": "DATA-SAFETY. Not a judgement call, skips evaluate."
+      },
+      {
+        "turn": 6,
+        "text": "Implemented on idea/data-safety-detectors (3bfe5f1). New RepoCarriesNoOpaqueExportToken: extracts every maximal 16-64 character [A-Za-z0-9_-] run mixing letters and digits from all 114 tracked and untracked-not-ignored files, then streams the 101 MB export once and fails on any token the export contains. MEASURED: 23 candidates, 0 hits. Two design points measured rather than guessed -- (a) base64 data URIs must be stripped first, or the inlined 577 KB PNG in presentation.html alone contributes ~9000 fragments of exactly this shape; (b) exactly one raw candidate does occur in the export and it is an arm identifier, so the 9 ids in router.pricing.OBSERVED_ARMS are exempt STRUCTURALLY, tracking the arm table rather than being an allowlist that can grow. Two controls: a token lifted out of the export at runtime IS found by the scanner (so the scan is not vacuous), and that same token seeded into an untracked scratch file made the test fail. Failure output prints the repo path and a MASKED shape (letters -> a/A, digits -> #), never the token. Runtime +3 s. Gate: make test 92 OK, make all green, router.gates GREEN. ADR-010."
+      },
+      {
+        "turn": 7,
+        "text": "INTEGRATION FOUND A REAL DEFECT THAT NEITHER BRANCH COULD SEE. i0009's SCAN_REF plumbing made RepoCarriesNoPresignedSignature._repo_files() enumerate a ref's tree via git ls-tree. i0005's RepoCarriesNoOpaqueExportToken reuses that enumerator but read each path back out of the WORKING TREE. Under SCAN_REF the two disagree silently: a path the ref has and the checkout does not is dropped by an os.path.isfile guard, and a shared path is read at the wrong content -- so loop/push_gate.sh, which already invokes the whole module per ref, was running the opaque detector against main's files and pronouncing every branch clean. Fixed on idea/integrate-turn7 by reading through _repo_blob, the accessor the sibling placeholder check already used. Test first: tests/test_push_gate.py::OpaqueTokenScanIsRefAware builds a dangling commit carrying an invented opaque token, asserts it IS found under SCAN_REF and is NOT found without it, and asserts the probe has zero occurrences in the export. Watched it fail before the fix."
       }
     ]
   },
@@ -116,13 +132,17 @@
     "title": "Supervisor budget check interpolates state.json into a python -c source string",
     "kind": "code",
     "why": "loop/run.sh:193 builds \"import sys;sys.exit(0 if float('$spent') >= ...)\" where $spent is the raw printed cost_usd field out of loop/state/state.json. That file is written by every turn's bypassPermissions agent, so a non-numeric value becomes executable Python in the supervisor -- which runs outside any tool-permission boundary and re-evaluates it via stop_reason() at the top of every loop iteration. Found by the turn-4 security review.",
-    "status": "accepted",
-    "branch": null,
+    "status": "implemented",
+    "branch": "idea/supervisor-untrusted-state",
     "created_turn": 4,
     "notes": [
       {
         "turn": 4,
         "text": "SECURITY. Fix: pass values as argv, not source text -- \"$PY\" -c 'import sys;sys.exit(0 if float(sys.argv[1]) >= float(sys.argv[2]) else 1)' \"$spent\" \"$LOOP_BUDGET_USD\". Harden state_field, usage_pct, is_rate_limited and the COST extractor the same way as defence in depth. Success = a test that writes a payload string into state.json's cost_usd, runs stop_reason, and asserts the payload did not execute and the loop stopped cleanly."
+      },
+      {
+        "turn": 6,
+        "text": "Fixed on idea/supervisor-untrusted-state (dbd8647). The exploit is real and was measured, not argued: tests/test_supervisor_input.py runs one probe payload down both paths -- through the OLD interpolated form it executes and writes its sentinel, through stop_reason as it now stands the sentinel is absent and the loop stops with 'unreadable cost_usd'. 4 of the file's 9 tests failed before the fix, 9 pass after; make test 91 OK (was 82), make all green, router.gates GREEN 4 pass / 2 warn / 0 fail. Converted all five readers, not just the reachable one: state_field, usage_pct, quota_reset_epoch, is_rate_limited and the per-turn COST extractor. TWO THINGS FOUND WHILE FIXING IT, both now covered. (1) The max-turns guard was switchable off by writing a non-integer turn counter -- [ $turn -ge 40 ] is a shell error on one, and an erroring guard reads as 'do not stop'; new state_int coerces it. (2) The budget check is three-valued now (over / under / unreadable) and fails closed on the third, which is the one a merely corrupt state file reaches by accident. The durable guard is textual: no python -c argument in run.sh may be double-quoted, and none may continue past its closing quote. run.sh also gained a LOOP_RUN_SOURCED guard so the helpers can be sourced without starting a night."
       }
     ]
   },
@@ -131,13 +151,21 @@
     "title": "The push gate scans the checked-out tree but pushes every branch",
     "kind": "code",
     "why": "loop/run.sh:154 runs tests.test_data_safety against whatever HEAD is, then loop/run.sh:161-183 pushes every ref under refs/heads. A branch updated by an earlier turn and not currently checked out is pushed having never been scanned -- e.g. text-classifier-finetune, which per docs/DATA-SAFETY-DEBT.md still carries three raw identifiers, is pushed unscanned whenever main is the checkout. This is the exact incident the gate was written to prevent. Found independently by the code-review skill and the turn-4 security review.",
-    "status": "accepted",
-    "branch": null,
+    "status": "implemented",
+    "branch": "idea/push-gate-per-ref",
     "created_turn": 4,
     "notes": [
       {
         "turn": 4,
         "text": "DATA-SAFETY. Fix: scan each branch's own tree before pushing it -- loop over the ref list, and for each candidate run the data-safety suite against that ref (git worktree add a throwaway checkout, or drive the test's file enumeration off 'git ls-tree -r <ref>' instead of 'git ls-files'). Skip and log any branch that fails; do not suppress the whole push cycle for one bad branch. Success = a test that dirties a non-checked-out branch with a concrete placeholder and asserts push_all_branches refuses that branch and still pushes the clean ones."
+      },
+      {
+        "turn": 6,
+        "text": "Implemented on idea/push-gate-per-ref (1fd25ac). New loop/push_gate.sh is the single push gate; run.sh and bootstrap.sh source it and neither contains a git push of its own. It scans the working tree once, then scans EACH branch against its own tree via the new DATA_SAFETY_SCAN_REF env var (tests/test_data_safety.py enumerates git ls-tree and reads blobs with git cat-file instead of the filesystem) before pushing that branch; a failing branch is skipped and named, the clean ones still go. MEASURED, not asserted: run against this repo's five real branches, the per-ref scan is RED on text-classifier-finetune -- the exact branch docs/DATA-SAFETY-DEBT.md records as carrying raw ids, and the exact branch the old gate pushed unscanned whenever main was checked out -- and names docs/POSTMORTEM-textclf.md; main, idea/router-verify, idea/data-safety-detectors and frontend-console are green. The success criterion from the turn-4 note is met behaviourally in tests/test_push_gate.py::PushGateRefusesOnlyTheDirtyBranch: a throwaway repo with a real local remote and three branches, one seeded with a marker -- asserts on what actually LANDED on the remote, not on what the function printed. Mutating the per-ref check to a no-op kills 3 of its 4 tests. Ref-awareness itself is tested both directions against this repo, the dirty ref built with git commit-tree and left DANGLING so no push path can ever see it. make test 93 OK (was 82), make all green, router.gates GREEN 4/2/0. ADR-011. NOT FIXED and deliberately so: i0016 (stale remote-tracking refs make the skip-if-same check wrong for branches other than main) is untouched and still proposed -- it is a different bug in the same loop."
+      },
+      {
+        "turn": 7,
+        "text": "INTEGRATION FOUND A REAL DEFECT THAT NEITHER BRANCH COULD SEE. i0009's SCAN_REF plumbing made RepoCarriesNoPresignedSignature._repo_files() enumerate a ref's tree via git ls-tree. i0005's RepoCarriesNoOpaqueExportToken reuses that enumerator but read each path back out of the WORKING TREE. Under SCAN_REF the two disagree silently: a path the ref has and the checkout does not is dropped by an os.path.isfile guard, and a shared path is read at the wrong content -- so loop/push_gate.sh, which already invokes the whole module per ref, was running the opaque detector against main's files and pronouncing every branch clean. Fixed on idea/integrate-turn7 by reading through _repo_blob, the accessor the sibling placeholder check already used. Test first: tests/test_push_gate.py::OpaqueTokenScanIsRefAware builds a dangling commit carrying an invented opaque token, asserts it IS found under SCAN_REF and is NOT found without it, and asserts the probe has zero occurrences in the export. Watched it fail before the fix."
       }
     ]
   },
@@ -146,13 +174,17 @@
     "title": "bootstrap.sh pushes every branch with no data-safety gate at all",
     "kind": "code",
     "why": "loop/bootstrap.sh:100 pushes every branch and the file contains no call to data_safety_ok or tests.test_data_safety -- grep confirms line 100 is the only match for either. Commit 8257642 added the gate to run.sh's push path and did not backport it. Re-running bootstrap reproduces the original night-one incident verbatim. Compounding: bootstrap runs 'make test' BEFORE 'make all', so the two suite classes that scan generated-artifact content skip on an empty directory rather than fail, and nothing re-runs them after the artifacts exist. Found by the turn-4 security review.",
-    "status": "accepted",
-    "branch": null,
+    "status": "implemented",
+    "branch": "idea/push-gate-per-ref",
     "created_turn": 4,
     "notes": [
       {
         "turn": 4,
         "text": "DATA-SAFETY. Fix: call the same data_safety_ok gate in bootstrap.sh immediately before its push loop, and order it AFTER the generated artifacts are built so the content-scanning classes actually run instead of skipping. Success = bootstrap with a seeded concrete placeholder pushes nothing and exits non-zero."
+      },
+      {
+        "turn": 6,
+        "text": "Implemented on idea/push-gate-per-ref (1fd25ac), same commit as i0009. bootstrap.sh now sources loop/push_gate.sh and its push loop is a single push_all_branches call that die()s on refusal instead of printing a warning; grep confirms bootstrap.sh contains no git push at all. The compounding half is fixed too: make all now runs BEFORE make test, so the two classes that scan the generated artifacts stop raising SkipTest on an empty directory and being green for the wrong reason. HONEST LIMIT ON THE EVIDENCE: the turn-4 note asked for 'bootstrap with a seeded placeholder pushes nothing and exits non-zero'. bootstrap.sh moves shared history and cannot be run unattended, so what is tested is (a) the gate function it now calls, behaviourally against a real remote in tests/test_push_gate.py, and (b) four structural assertions in EverySupervisorPushPathUsesTheGate: both supervisors source the gate, neither contains 'git push', make all precedes make test, and the refusal path is a die() not a warn. The behaviour is shared code with i0009's test; what the structural tests protect is a second ungated push path growing next to the gated one, which is exactly how this bug happened."
       }
     ]
   },
@@ -161,13 +193,17 @@
     "title": "CONCRETE_PII misses a serial written adjacent to its prefix",
     "kind": "code",
     "why": "tests/test_data_safety.py:267 requires a trailing _<digits>, so a serial written with the digits after any other separator slips through. loop/JOURNAL.md carried exactly that shorthand on main and survived the turn-1 cleanup that docs/DATA-SAFETY-DEBT.md records as complete; the value it encodes occurs in the export in the thousands. Removed in c05e078. This is the same detector gap family as i0005 but a different regex: i0005's opaque-token heuristic would not catch it either, because the token is not opaque-looking.",
-    "status": "accepted",
-    "branch": null,
+    "status": "implemented",
+    "branch": "idea/data-safety-detectors",
     "created_turn": 4,
     "notes": [
       {
         "turn": 4,
         "text": "DATA-SAFETY. Likely one implement turn together with i0005. Fix: match the prefix plus a digit run separated by ANY non-word character, and normalise before comparing to DOCUMENTARY. Success = a test asserting the shorthand form that reached main in commit 5082319 is now detected, plus make test still green with the allowlist still capped at 8."
+      },
+      {
+        "turn": 6,
+        "text": "Implemented on idea/data-safety-detectors (3bfe5f1). CONCRETE_PII/CONCRETE_ENTITY now match a prefix plus up to two ATTACHED non-alphanumeric characters plus a digit run, and normalise back to the underscore form before comparing to DOCUMENTARY, so one allowlist entry covers every spelling -- allowlist unchanged at 4 of its cap of 8. Whitespace is excluded from the separator class and that was MEASURED, not assumed: with whitespace allowed the file failed on its own docstring, where a sentence of the form '<prefix>, 3 of them' reads as a serial. New ConcretePlaceholderShapes class tests the PATTERN rather than the corpus -- 8 attached separators, entity bracket round-trip, DOCUMENTARY round-trip, prose carve-out -- with every probe assembled at runtime from an invented prefix (0 occurrences in the export, measured) so the file carries no concrete placeholder of its own. Positive control: the slash shorthand seeded into an untracked scratch file made the corpus test fail, naming the file and the normalised token; scratch file deleted in the same command, never committed. Gate: make test 92 OK, make all green, router.gates GREEN 4 pass / 2 warn / 0 fail. ADR-010."
       }
     ]
   },
@@ -176,13 +212,17 @@
     "title": "plan_turn starves the review turn whenever deck_every divides review_every",
     "kind": "code",
     "why": "loop/backlog.py:101-104 returns 'deck' before testing the review cadence, so every turn matching review_every also matches deck_every and review never runs. Measured over turns 1..40: (5,4) fires, but (5,10), (4,4), (5,5) and (3,6) never fire once. Current config is safe by luck, not design. Same function, loop/backlog.py:101: deck_every has no >0 guard where review_every has one and config.env documents '0 disables' only for REVIEW_EVERY -- deck_every=0 raises ZeroDivisionError, run.sh captures empty stdout with no exit check, and the loop stops logging 'unknown turn type' with the real cause buried in a log. Both verified empirically.",
-    "status": "accepted",
-    "branch": null,
+    "status": "implemented",
+    "branch": "idea/plan-turn-cadence",
     "created_turn": 4,
     "notes": [
       {
         "turn": 4,
         "text": "Not a judgement call -- verified repro, and it silently disables the periodic security review, so it defeats a control rather than being a style opinion. Fix: guard both cadences the same way, and let review win the tie (a stale deck costs one turn; a skipped review costs the night). Success = tests/test_backlog_plan.py asserting review fires at least once per review_every*2 turns across (5,4),(5,10),(4,4),(5,5),(3,6), and that deck_every=0 disables rather than raises."
+      },
+      {
+        "turn": 6,
+        "text": "IMPLEMENTED on idea/plan-turn-cadence (66b8a64). Repro confirmed before the fix: over turns 1..40 with a non-empty queue, review fired 0 times for (5,10), (4,4), (5,5) and (3,6); the shipped (5,4) fired 8 of its 10 multiples, losing turns 20 and 40. deck_every=0 raised ZeroDivisionError.\n\nThe obvious fix is wrong and was measured rather than assumed: swapping the two checks moves the starvation onto the deck -- with deck_every == review_every every deck multiple is a tie, and the deck then fires 0 times for (4,4) and (5,5). Shipped rule is review-wins-the-tie PLUS a deferral, so a deck that loses a tie runs on the very next turn. Both cadences share one _cadence_due(turn, every) guard, so <=0 disables either identically.\n\nMeasured after the fix over the FULL grid deck_every 1..12 x review_every 1..12, turns 1..40: 0 review multiples missed, and deck staleness bounded at deck_every+1 for every pair with review_every>=2 (review_every=1 excluded -- that means the operator asked for nothing else to run).\n\nAlso fixed: bootstrap.sh:112 passed --deck-every without --review-every, so its 'next turn would be' preview predicted a type the supervisor would not pick.\n\nGATE: make test 96 OK (14 new), make all green (301 claims), router.gates GREEN 4 pass / 2 warn / 0 fail. No claims.json key added -- this is loop infrastructure and quotes no export number, so no number-verifier. Files: loop/backlog.py, tests/test_backlog_plan.py, loop/README.md, loop/config.env, loop/bootstrap.sh, docs/DECISIONS.md (ADR-013)."
       }
     ]
   },
@@ -191,13 +231,17 @@
     "title": "Two docs claim nothing leaves the machine past a red data-safety suite; three push paths bypass it",
     "kind": "presentation",
     "why": "docs/DATA-SAFETY-DEBT.md:61 and loop/README.md:57 both assert the gate covers every push. loop/prompts/merge.md:78, loop/prompts/deck.md:70 and loop/bootstrap.sh:100 all push directly without it, and i0007 is a fourth path. A false safety claim is worse than no claim: it is what let this review turn's predecessors stop looking. Found by the code-review skill.",
-    "status": "accepted",
-    "branch": null,
+    "status": "implemented",
+    "branch": "idea/push-gate-per-ref",
     "created_turn": 4,
     "notes": [
       {
         "turn": 4,
         "text": "DATA-SAFETY (documentation half). Fix: restate both sentences to name exactly which push path the gate covers, and cross-reference i0007/i0009/i0010 as the paths it does not. Do this in the same turn that fixes i0010 so the doc and the code land true together."
+      },
+      {
+        "turn": 6,
+        "text": "Implemented on idea/push-gate-per-ref (1fd25ac), same commit. loop/README.md:55 and docs/DATA-SAFETY-DEBT.md both restated rather than deleted: they now say what the gate covers (working tree once, then each branch against its own tree, refusing per branch) and name the two paths it does NOT cover -- entire/* checkpoint refs (i0007, 36 already on origin) and the hand-written git push in loop/prompts/merge.md and loop/prompts/deck.md. Both prompts additionally gained an explicit 'this push path is NOT gated' line running tests.test_data_safety before the push; that is an instruction to a model, not a gate, and both docs say so in those words. bootstrap.sh, the third path named in the finding, is no longer a bypass at all -- see i0010."
       }
     ]
   },
@@ -245,6 +289,10 @@
     "branch": "idea/integrate-turn7",
     "created_turn": 7,
     "notes": [
+      {
+        "turn": 7,
+        "text": "All six branches merged onto idea/integrate-turn7, in this order: text-classifier-finetune, idea/router-verify, idea/data-safety-detectors, idea/push-gate-per-ref, idea/supervisor-untrusted-state, idea/plan-turn-cadence. Each was verified green in isolation first (make test + router.gates on every one). Result: make test 140 OK (main is 82), make all green (301 claims), router.gates GREEN 4 pass / 2 warn / 0 fail, and router.verify PASS on 41 numerals across 5 artifacts. ADR numbering needed no renumbering -- the parallel sessions had already coordinated 008..013. Conflicts were confined to docs/DECISIONS.md, docs/IDEAS.md, loop/JOURNAL.md and loop/state/state.json, all resolved as unions; loop/state/backlog.json auto-merged correctly and was NOT hand-edited. tests/test_data_safety.py and loop/run.sh both auto-merged textually despite two independent authors each -- run.sh passes bash -n and its tests, test_data_safety.py did NOT (see the note on i0005/i0009). THE MERGE TURN SHOULD MERGE THIS BRANCH, not the six."
+      },
       {
         "turn": 7,
         "text": "MERGE THIS ONE, NOT THE SIX. main's copy of the backlog is stale: i0001, i0004, i0005, i0008, i0009, i0010, i0011, i0012 and i0013 were all built by parallel turn-6/7 sessions and flagged implemented on their own branches, so main still shows them accepted with branch null and the merge turn would find nothing to merge. idea/integrate-turn7 contains all six branches. Verified on the integration branch: make test 140 OK (main is 82), make all green (301 claims), router.gates GREEN 4 pass / 2 warn / 0 fail, router.verify PASS on 41 numerals across 5 artifacts, and tests.test_data_safety green under DATA_SAFETY_SCAN_REF pointed at the branch itself. When loop/state/backlog.json conflicts on this merge, take the BRANCH side -- it already carries the correct implemented/branch flags for all nine plus this entry."

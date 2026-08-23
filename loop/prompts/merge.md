@@ -75,6 +75,7 @@ A reverted merge is a correct outcome. A broken `main` at 08:00 is not.
 ### 5. Push and record
 
 ```bash
+.venv/bin/python -m unittest tests.test_data_safety   # this push path is NOT gated; run it
 git push origin main
 git push origin idea/<slug>
 .venv/bin/python loop/backlog.py set --id iNNNN --status merged --note "on main as <short sha>"
