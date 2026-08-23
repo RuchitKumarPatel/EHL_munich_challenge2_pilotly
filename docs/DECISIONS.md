@@ -190,3 +190,36 @@ order of magnitude.
 **Consequence.** `router/recon.py` owns the turn-boundary rule (a boundary opens at the start of
 every maximal run of model-produced items) and every downstream cost number derives from it.
 `group_trajectories()` is banned; `.claude/settings.json` warns on any file that writes its name.
+
+---
+
+## ADR-013 — Review outranks the deck on a tie, and the deck is deferred rather than dropped
+
+**Status:** Accepted
+
+**Decision.** `loop/backlog.py::plan_turn` tests the review cadence before the deck cadence. A
+turn that satisfies both runs the `review`; the deck runs on the following turn instead. Both
+cadences share one guard (`_cadence_due`), so `0` — or any value `<= 0` — disables either of them
+identically.
+
+**Why.** The periodic quality-and-security pass is the loop's only control that looks at what the
+loop itself is doing. Silently disabling it is a strictly worse failure than showing an
+out-of-date slide, and the previous ordering disabled it silently.
+
+**The measurement.** With the deck check first, a review that lost a tie waited for its next
+multiple — which, whenever `DECK_EVERY` divides `REVIEW_EVERY`, is also a deck turn, so it lost
+again forever. Over turns 1..40 with a non-empty queue, `review` fired **zero** times for
+`(5,10)`, `(4,4)`, `(5,5)` and `(3,6)`. The shipped `(5,4)` did fire, but lost turn 20 — it worked
+by coincidence of the two numbers being coprime-ish, not by design. Separately, `DECK_EVERY=0`
+raised `ZeroDivisionError` inside a command substitution `run.sh` does not exit-check, so the
+supervisor saw an empty `TYPE` and logged `unknown turn type`.
+
+The naive fix — swap the two checks — was written, measured and rejected in the same turn: it
+moves the starvation onto the deck, which then fires **zero** times for `(4,4)` and `(5,5)`. The
+deferral clause is what makes the trade one-sided. Over the full grid `DECK_EVERY` 1..12 ×
+`REVIEW_EVERY` 1..12, turns 1..40: **0 review multiples missed**, and deck staleness bounded at
+`DECK_EVERY + 1` turns for every pair with `REVIEW_EVERY >= 2`.
+
+**Consequence.** `tests/test_backlog_plan.py` (14 tests) pins both halves — review is never
+missed, and the deck is never starved by the rule that protects review. The bound is asserted
+across the whole grid, not just the five pairs that happened to be tried.

@@ -109,5 +109,5 @@ fi
 
 step "ready"
 "$PY" loop/backlog.py stats
-printf '\n  next turn would be: %s\n' "$("$PY" loop/backlog.py plan --deck-every "$DECK_EVERY")"
+printf '\n  next turn would be: %s\n' "$("$PY" loop/backlog.py plan --deck-every "$DECK_EVERY" --review-every "$REVIEW_EVERY")"
 printf '\n  start the loop with:\n    nohup loop/run.sh > loop/logs/supervisor.log 2>&1 &\n\n'
