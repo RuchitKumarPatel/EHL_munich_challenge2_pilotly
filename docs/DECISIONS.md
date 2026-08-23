@@ -465,3 +465,57 @@ reintroduce exactly the defect this ADR closes. Until that exists, the project q
 `refusal.mde_best_powered_arm_pair.pp` is an unweighted arm-pair rate contrast — a different
 estimand on a different weighting. Asserting it would replace one untraceable comparison with
 another.
+
+---
+
+## ADR-022 — One file, one verdict: a data-safety answer may not depend on the runner
+
+**Status:** Accepted
+
+**Context.** `tests/test_data_safety.py` carries a `__main__` guard, so the invocation it invites
+is `python tests/test_data_safety.py`. That form puts `tests/` on `sys.path` and not the repo
+root, which makes `router` unimportable. Two places absorbed that differently, and both were
+wrong in the reassuring-then-alarming direction:
+
+* `RepoCarriesNoOpaqueExportToken._exempt_arm_ids` wrapped the `router.pricing` import in
+  `except Exception: return frozenset()`. Every arm identifier occurs in the export by
+  construction, so an empty exemption table turns nine legitimate ids into nine reported leaks.
+* `ResultsCarryNoRawToolOutput._shingles` imports `router.io` unguarded, so its `setUpClass`
+  errored and the class stopped running — two tests fewer, silently.
+
+Measured before the fix, on the same tree, same second: `python -m tests.test_data_safety` ran 21
+tests and was green; `python tests/test_data_safety.py` ran 19 and reported one failure and two
+errors, naming real arm identifiers as offenders.
+
+**This was never a live gate failure and must not be recorded as one.** `loop/push_gate.sh` uses
+the `-m` form, which was and is green. What it was is a hand-debugging trap on defense morning: a
+human runs the file the way the file asks to be run, sees three data-safety failures naming ids
+that really are in the export, and concludes the repo is dirty. The cost of that mistake is paid
+in the one hour nobody has.
+
+**Decision.**
+
+1. The repo root is inserted at `sys.path[0]` at module import, not in the `__main__` guard. An
+   import that resolves under one runner and not another is the defect; the guard is only where
+   it happened to show. Putting it at import time also means a third invocation — a discovery
+   runner, an IDE, a subprocess from another test — inherits the same resolution.
+2. The `router.pricing` import is unguarded. An exemption table is a **correctness input** to a
+   leak detector, not an optimisation: a detector that is wrong about what counts as a leak has
+   no verdict to give, so it must fail rather than degrade. This is the same fail-quiet shape
+   ADR-015 removed from the per-ref scan, in the same file.
+3. The property is asserted as **parity**, in `tests/test_data_safety_invocation.py`: both forms
+   are run as subprocesses and must agree on tests run and failures reported, and both must exit
+   0. Parity is the right statement because the failure mode is disagreement — a change that
+   breaks both forms identically is a different bug, and other files catch that one.
+
+**The control that keeps this honest.** Restoring the `except Exception` would leave a
+happy-path test green, because under `-m` the import succeeds. So the suite additionally makes
+`router.pricing` unimportable and asserts `_exempt_arm_ids` **raises**. Without that, the
+degrade path could return without any test noticing.
+
+**Measured after.** Both invocations: 21 tests, OK, exit 0. `make test` 145 OK (was 140), `make
+all` green at 301 claims, `router.gates` GREEN 4 pass / 2 warn / 0 fail, `router.verify` PASS on
+44 numerals across 5 artifacts.
+
+**ADR number.** 015–021 are taken by the unmerged `idea/integrate-turn12`; this branch is cut
+from `main`, so it takes 022 to avoid a renumbering conflict at merge time.
