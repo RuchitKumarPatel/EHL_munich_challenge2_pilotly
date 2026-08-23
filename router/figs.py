@@ -178,6 +178,15 @@ def policy_point(label: str, kind: str, panel, target: np.ndarray,
         "manski_pp": float(diag["manski_widening_unsupported"]) * 100.0,
         "identified_upper_pp": float(diag["identified_part_one_sided_upper"]) * 100.0,
         "extrapolated_spend_share": float(diag["extrapolated_spend_share"]),
+        # The ARITHMETIC CEILING on this point's identified delta. The delta is a
+        # spend-weighted mean of per-run differences in [0, 1] taken over switched
+        # runs only, so |delta| can never exceed the share of spend the policy
+        # moves. A policy that moves little spend cannot reach a distant hull
+        # however well it routes. See ADR-014.
+        "switched_spend_share": float(
+            panel.weights("spend")[target != panel.arm_code].sum()
+            / panel.weights("spend").sum()
+        ),
         "n_switched": int((target != panel.arm_code).sum()),
         "ci_lo_pp": None,
         "ci_hi_pp": None,
@@ -206,7 +215,8 @@ def frontier_data(recon: list[dict] | None = None, routes: list[dict] | None = N
         "label": "logged (as served)", "kind": "logged", "arm": "",
         "cost_usd": float(logged_usd), "sheet": sheet,
         "bound_pp": 0.0, "manski_pp": 0.0, "identified_upper_pp": 0.0,
-        "extrapolated_spend_share": 0.0, "n_switched": 0,
+        "extrapolated_spend_share": 0.0, "switched_spend_share": 0.0,
+        "n_switched": 0,
         "ci_lo_pp": None, "ci_hi_pp": None, "point_pp": 0.0,
     }
 
@@ -323,7 +333,8 @@ def frontier_data(recon: list[dict] | None = None, routes: list[dict] | None = N
 CSV_COLUMNS = (
     "label", "kind", "arm", "cost_usd", "sheet", "bound_pp",
     "identified_upper_pp", "manski_pp", "point_pp", "ci_lo_pp", "ci_hi_pp",
-    "extrapolated_spend_share", "n_switched", "on_hull", "plotted", "basis",
+    "extrapolated_spend_share", "switched_spend_share", "n_switched",
+    "on_hull", "plotted", "basis",
 )
 
 
@@ -487,7 +498,11 @@ def render(data: dict, path: Path | str = PNG_PATH) -> Path:
         fontweight="bold", zorder=8,
     )
 
-    # --- the gap the chart exists to show, drawn geometrically ---------------
+    # --- the two levels the chart exists to show, drawn geometrically --------
+    # Both endpoints are ONE-SIDED UPPER bounds (router/ope.py non_inferiority_bound
+    # returns hi only), so their difference bounds the true difference in neither
+    # direction. The arrow shows the two levels; it deliberately does not label
+    # the distance between them as a gap. See ADR-014.
     hull_at_gated = data["gated_hull_bound_pp"]
     ax.annotate(
         "", xy=(gated["cost_usd"], gated["bound_pp"]),
@@ -496,8 +511,9 @@ def render(data: dict, path: Path | str = PNG_PATH) -> Path:
                         shrinkA=1, shrinkB=1), zorder=6,
     )
     ax.annotate(
-        f"upper bound is {data['gated_gap_vs_hull_pp']:+.2f} points higher\n"
-        "than the best simple mix",
+        f"router bound {gated['bound_pp']:+.2f} pp\n"
+        f"mixture bound {hull_at_gated:+.2f} pp\n"
+        "both one-sided UPPER bounds",
         xy=(gated["cost_usd"], 0.5 * (gated["bound_pp"] + hull_at_gated)),
         xytext=(-18, -58), textcoords="offset points", ha="right", va="center",
         fontsize=11.5, color=VIOLET, linespacing=1.5, zorder=6,
@@ -532,6 +548,16 @@ def render(data: dict, path: Path | str = PNG_PATH) -> Path:
         0.078, 0.936,
         "n = 1000 tarjectories.",
         fontsize=11.5, color=MUTED, ha="left", va="top", linespacing=1.65,
+    )
+    verdict = "BELOW" if data["router_beats_hull"] else "ABOVE"
+    fig.text(
+        0.078, 0.856,
+        f"FINDING: the gated router sits {verdict} the single-arm mixture frontier "
+        f"— {gated['bound_pp']:+.2f} pp against {hull_at_gated:+.2f} pp at the same spend.\n"
+        "Do NOT subtract those: both are one-sided UPPER bounds. It moves only "
+        f"{gated['switched_spend_share']:.1%} of est. spend, which caps its delta.",
+        fontsize=12.5, color=VIOLET, ha="left", va="top", fontweight="bold",
+        linespacing=1.5,
     )
     fig.text(
         0.078, 0.030,
