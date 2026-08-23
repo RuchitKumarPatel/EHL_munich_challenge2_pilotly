@@ -190,3 +190,54 @@ order of magnitude.
 **Consequence.** `router/recon.py` owns the turn-boundary rule (a boundary opens at the start of
 every maximal run of model-produced items) and every downstream cost number derives from it.
 `group_trajectories()` is banned; `.claude/settings.json` warns on any file that writes its name.
+
+---
+
+## ADR-008 — A pretrained transformer is allowed on this branch, and it does not help
+
+**Status:** Accepted (branch `text-classifier-finetune`). Supersedes ADR-007 **for this branch only**;
+`main` keeps stdlib + numpy + matplotlib.
+
+**Decision.** `torch` (CPU wheel) and `transformers` are installed on this branch, and
+`answerdotai/ModernBERT-base` is fine-tuned on the pre-treatment text. The result is reported as a
+**negative**: the router on `main` does not change.
+
+**Why.** ADR-007 bans sklearn and scipy for reproducibility, and `AGENTS.md` requires the pipeline to
+run offline on a laptop with no GPU and no API keys. Neither forbids a package: the `AGENTS.md`
+constraint is about *runnability*, and a CPU fine-tune of a 149M-parameter encoder satisfies it.
+The guard in `.claude/settings.json` matches only `sklearn|scipy|scikit-learn` and does not fire on
+`torch`. The question was worth the compute because "a better text model would find the signal" is
+the first objection any judge raises against a hand-built feature matrix, and the honest way to
+close it is to run it.
+
+**The measurement.** Three findings, each sufficient on its own.
+
+(a) *Frozen representation is worse than hashed n-grams.* Cluster-CV by literal cron path, spend
+target `log1p(effective billed tokens)`: ModernBERT-base mean-pooled at L=1024 gets OOF R² 0.367 and
+captures 78.2% of the oracle dollars at k=100, against 0.566 / 92.2% for hashed normalised word
+1-2-grams and 0.510 / 87.0% for the 35 tabular columns. Blending toward the transformer degrades
+capture monotonically (92.2% → 78.2%). ModernBERT is a masked LM, not a sentence encoder, and the
+routing signal is the presence of specific tokens (`silent`, `nothing`, `search`) that bag-of-words
+reads directly.
+
+(b) *Fine-tuning does not close the gap.* 5 epochs, L=512 head+tail, 229 training rows grouped by
+cron path, trunk LR 3e-5 / head LR 1e-3: held-out spend R² **0.150**, friction AUC **0.625** — against
+0.566 and 0.688 for the hashed n-grams on the same population. The spend head is still underfit
+(prediction sd is 30% of target sd after round 1, and the R² only moves 0.091 → 0.150 across a 4x
+compute increase).
+
+(c) *The arm-conditioned Δ head learns noise.* After the architecture fix that gave the arm its own
+unmixed path, Δ̂ = p̂(sonnet) − p̂(opus) has mean +0.104 and sd 0.114 on held-out rows — but
+`corr(Δ̂, train-half stratum gap) = +0.042`, and Δ̂ ranges over [−0.253, +0.638] where the real
+stratum gap ranges over [+0.046, +0.157]. It invents roughly 4x more heterogeneity than exists.
+Using it as a decision weight *destroys* value: at a matched held-out friction bound of 0.008, the
+best spend predictor alone yields $22.80 while the same predictor divided by (1 + 5·Δ̂) yields
+**$10.51** — a 54% loss from the Δ term alone.
+
+**Consequence.** This is the fifth risk-side mechanism to fail out-of-sample (per-cell Δ, per-pair δ,
+job-history features, hashed-n-gram p̂, fine-tuned Δ̂), and the first tested with a real pretrained
+model. The constraint is not representational: within the claude lane the arm effect is +6.1pp
+against an MDE of 8.2pp, so the sampling noise of any selection signal exceeds the signal. The
+router therefore stays what it is on `main` — rank by predicted spend, take top-k, target
+`claude-sonnet-5` — and no model-class change is pending. Reproduction notes, the mirror workaround
+for the blocked `huggingface.co`, and the measured CPU costs are in `router/textclf/README.md`.
