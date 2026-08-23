@@ -143,13 +143,17 @@
     "title": "The push gate scans the checked-out tree but pushes every branch",
     "kind": "code",
     "why": "loop/run.sh:154 runs tests.test_data_safety against whatever HEAD is, then loop/run.sh:161-183 pushes every ref under refs/heads. A branch updated by an earlier turn and not currently checked out is pushed having never been scanned -- e.g. text-classifier-finetune, which per docs/DATA-SAFETY-DEBT.md still carries three raw identifiers, is pushed unscanned whenever main is the checkout. This is the exact incident the gate was written to prevent. Found independently by the code-review skill and the turn-4 security review.",
-    "status": "accepted",
-    "branch": null,
+    "status": "implemented",
+    "branch": "idea/push-gate-per-ref",
     "created_turn": 4,
     "notes": [
       {
         "turn": 4,
         "text": "DATA-SAFETY. Fix: scan each branch's own tree before pushing it -- loop over the ref list, and for each candidate run the data-safety suite against that ref (git worktree add a throwaway checkout, or drive the test's file enumeration off 'git ls-tree -r <ref>' instead of 'git ls-files'). Skip and log any branch that fails; do not suppress the whole push cycle for one bad branch. Success = a test that dirties a non-checked-out branch with a concrete placeholder and asserts push_all_branches refuses that branch and still pushes the clean ones."
+      },
+      {
+        "turn": 6,
+        "text": "Implemented on idea/push-gate-per-ref (1fd25ac). New loop/push_gate.sh is the single push gate; run.sh and bootstrap.sh source it and neither contains a git push of its own. It scans the working tree once, then scans EACH branch against its own tree via the new DATA_SAFETY_SCAN_REF env var (tests/test_data_safety.py enumerates git ls-tree and reads blobs with git cat-file instead of the filesystem) before pushing that branch; a failing branch is skipped and named, the clean ones still go. MEASURED, not asserted: run against this repo's five real branches, the per-ref scan is RED on text-classifier-finetune -- the exact branch docs/DATA-SAFETY-DEBT.md records as carrying raw ids, and the exact branch the old gate pushed unscanned whenever main was checked out -- and names docs/POSTMORTEM-textclf.md; main, idea/router-verify, idea/data-safety-detectors and frontend-console are green. The success criterion from the turn-4 note is met behaviourally in tests/test_push_gate.py::PushGateRefusesOnlyTheDirtyBranch: a throwaway repo with a real local remote and three branches, one seeded with a marker -- asserts on what actually LANDED on the remote, not on what the function printed. Mutating the per-ref check to a no-op kills 3 of its 4 tests. Ref-awareness itself is tested both directions against this repo, the dirty ref built with git commit-tree and left DANGLING so no push path can ever see it. make test 93 OK (was 82), make all green, router.gates GREEN 4/2/0. ADR-011. NOT FIXED and deliberately so: i0016 (stale remote-tracking refs make the skip-if-same check wrong for branches other than main) is untouched and still proposed -- it is a different bug in the same loop."
       }
     ]
   },
@@ -158,13 +162,17 @@
     "title": "bootstrap.sh pushes every branch with no data-safety gate at all",
     "kind": "code",
     "why": "loop/bootstrap.sh:100 pushes every branch and the file contains no call to data_safety_ok or tests.test_data_safety -- grep confirms line 100 is the only match for either. Commit 8257642 added the gate to run.sh's push path and did not backport it. Re-running bootstrap reproduces the original night-one incident verbatim. Compounding: bootstrap runs 'make test' BEFORE 'make all', so the two suite classes that scan generated-artifact content skip on an empty directory rather than fail, and nothing re-runs them after the artifacts exist. Found by the turn-4 security review.",
-    "status": "accepted",
-    "branch": null,
+    "status": "implemented",
+    "branch": "idea/push-gate-per-ref",
     "created_turn": 4,
     "notes": [
       {
         "turn": 4,
         "text": "DATA-SAFETY. Fix: call the same data_safety_ok gate in bootstrap.sh immediately before its push loop, and order it AFTER the generated artifacts are built so the content-scanning classes actually run instead of skipping. Success = bootstrap with a seeded concrete placeholder pushes nothing and exits non-zero."
+      },
+      {
+        "turn": 6,
+        "text": "Implemented on idea/push-gate-per-ref (1fd25ac), same commit as i0009. bootstrap.sh now sources loop/push_gate.sh and its push loop is a single push_all_branches call that die()s on refusal instead of printing a warning; grep confirms bootstrap.sh contains no git push at all. The compounding half is fixed too: make all now runs BEFORE make test, so the two classes that scan the generated artifacts stop raising SkipTest on an empty directory and being green for the wrong reason. HONEST LIMIT ON THE EVIDENCE: the turn-4 note asked for 'bootstrap with a seeded placeholder pushes nothing and exits non-zero'. bootstrap.sh moves shared history and cannot be run unattended, so what is tested is (a) the gate function it now calls, behaviourally against a real remote in tests/test_push_gate.py, and (b) four structural assertions in EverySupervisorPushPathUsesTheGate: both supervisors source the gate, neither contains 'git push', make all precedes make test, and the refusal path is a die() not a warn. The behaviour is shared code with i0009's test; what the structural tests protect is a second ungated push path growing next to the gated one, which is exactly how this bug happened."
       }
     ]
   },
@@ -207,13 +215,17 @@
     "title": "Two docs claim nothing leaves the machine past a red data-safety suite; three push paths bypass it",
     "kind": "presentation",
     "why": "docs/DATA-SAFETY-DEBT.md:61 and loop/README.md:57 both assert the gate covers every push. loop/prompts/merge.md:78, loop/prompts/deck.md:70 and loop/bootstrap.sh:100 all push directly without it, and i0007 is a fourth path. A false safety claim is worse than no claim: it is what let this review turn's predecessors stop looking. Found by the code-review skill.",
-    "status": "accepted",
-    "branch": null,
+    "status": "implemented",
+    "branch": "idea/push-gate-per-ref",
     "created_turn": 4,
     "notes": [
       {
         "turn": 4,
         "text": "DATA-SAFETY (documentation half). Fix: restate both sentences to name exactly which push path the gate covers, and cross-reference i0007/i0009/i0010 as the paths it does not. Do this in the same turn that fixes i0010 so the doc and the code land true together."
+      },
+      {
+        "turn": 6,
+        "text": "Implemented on idea/push-gate-per-ref (1fd25ac), same commit. loop/README.md:55 and docs/DATA-SAFETY-DEBT.md both restated rather than deleted: they now say what the gate covers (working tree once, then each branch against its own tree, refusing per branch) and name the two paths it does NOT cover -- entire/* checkpoint refs (i0007, 36 already on origin) and the hand-written git push in loop/prompts/merge.md and loop/prompts/deck.md. Both prompts additionally gained an explicit 'this push path is NOT gated' line running tests.test_data_safety before the push; that is an instruction to a model, not a gate, and both docs say so in those words. bootstrap.sh, the third path named in the finding, is no longer a bypass at all -- see i0010."
       }
     ]
   },

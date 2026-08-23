@@ -64,8 +64,17 @@ record, in this file.
 
 ## What already stops a recurrence
 
-- `loop/run.sh::push_all_branches` runs `tests/test_data_safety.py` and pushes **nothing** when it
-  is red. Nothing leaves the machine past a red suite.
+- `loop/push_gate.sh::push_all_branches` — sourced by both `loop/run.sh` and `loop/bootstrap.sh`,
+  which no longer push on their own — scans the working tree once and then scans **each branch
+  against its own tree** (`DATA_SAFETY_SCAN_REF`) before pushing that branch. A branch that fails
+  is skipped and named; the clean ones still go. Until ADR-011 this said "nothing leaves the
+  machine past a red suite", which was false three ways: the scan read whatever was checked out
+  while every branch was pushed, `bootstrap.sh` had no gate at all, and the two paths below were
+  never covered.
+- **Not covered, on the record.** (a) `refs/entire/checkpoints/*` — exempt by name, pushed by the
+  `entire` CLI itself; see `i0007` and the 36 refs already on `origin`. (b) The hand-written
+  `git push` in `loop/prompts/merge.md` and `loop/prompts/deck.md`; those prompts are told to run
+  the suite first, which is an instruction to a model rather than a gate.
 - `loop/prompts/_common.md` hard rule 2: no export content in any tracked file, and `grep -c` any
   concrete-looking token against `export/` before writing it down — counts only.
 - Both detector gaps that let this through are now closed (ADR-010, backlog `i0005` and

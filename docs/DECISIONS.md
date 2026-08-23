@@ -317,3 +317,35 @@ and never the token, because the token is the leak. The exemption list tracks th
 adding an arm cannot be mistaken for widening a safety carve-out. What this still does not
 cover: an identifier shorter than 16 characters, or one that appears in the export only in a
 form the repo rewrote.
+
+## ADR-011 — Every push path goes through one gate, and it scans the ref it is pushing
+
+**Status:** Accepted
+
+**Decision.** `loop/push_gate.sh` is the single implementation of "may this ref leave this
+machine". `loop/run.sh` and `loop/bootstrap.sh` both source it and neither contains a `git push`
+of its own. The gate scans the working tree once, then scans **each branch against its own tree**
+via `DATA_SAFETY_SCAN_REF` before pushing that branch. A branch that fails is skipped and named;
+the clean ones still go.
+
+**Why.** The gate scanned whatever was checked out and then pushed every ref under `refs/heads`.
+A branch an earlier turn updated and moved off was pushed having never been scanned — which is
+the exact incident the gate was written to prevent. `loop/bootstrap.sh` had no gate at all: the
+gate was added to `run.sh` in 8257642 and never backported, so re-running bootstrap reproduced
+the night-one leak verbatim. Both were found by the turn-4 security review (`i0009`, `i0010`).
+
+**The measurement.** Against a throwaway repository with a real local remote and three branches,
+one of which carries a seeded marker: the marked branch does not appear on the remote, the other
+two do, and the refusal is logged by name — `tests/test_push_gate.py`, four assertions on what
+actually landed rather than on what the function printed. Mutating the per-ref check to a no-op
+kills three of the four. The ref-awareness itself is tested in both directions against this
+repository: a clean ref passes, and a `git commit-tree` commit carrying a concrete placeholder
+fails and names the offending path. That probe commit is deliberately left dangling, so no push
+path can ever see it. `make test` 93 OK.
+
+**Consequence.** Two claims in the docs were false and are now restated rather than deleted:
+`loop/README.md` and `docs/DATA-SAFETY-DEBT.md` both said nothing leaves the machine past a red
+suite. Three paths bypassed it. The remaining uncovered paths — `entire/*` checkpoint refs
+(`i0007`) and the hand-written pushes in the merge and deck prompts — are now named in both
+files instead of being implied away. A false safety claim is worse than no claim: it is what let
+this gate's own predecessors stop looking.
