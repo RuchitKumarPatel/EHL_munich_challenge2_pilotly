@@ -6,3 +6,5 @@ __pycache__/
 *.tar.gz
 .venv/
 site/data.js
+loop/logs/
+.loop-stop
