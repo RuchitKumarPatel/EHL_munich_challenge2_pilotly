@@ -786,3 +786,54 @@ quote-aware tag rule changes **0 lines** across all four HTML artifacts (a test 
 indented fences. Old parser and new produce the **identical** result on the shipped tree — 44
 bindings, 0 orphans, 0 warnings. So this buys nothing today and everything tomorrow: these fire
 the first time a human edits the deck or the README, which is the morning of the defense.
+## ADR-021 — The textclf reproduce path is configured, not hardcoded, and its inputs stay out of the repo
+
+**Status:** Accepted
+
+**Context.** `docs/POSTMORTEM-textclf.md` lands a measured NEGATIVE result on main, and the
+challenge scores naming where an estimate fails. A negative result nobody can re-run is a claim,
+not evidence. All four modules under `router/textclf/` opened with two absolute paths baked in:
+one laptop's repo root, and the scratchpad of the single session that produced the result. Neither
+resolves on another machine, and the second stops resolving on the original one at the next reboot.
+
+**Measured, not assumed.** The scratch directory still existed when this was fixed, so the failure
+mode was observed rather than argued: with the path hardcoded, running `encode.py` on THIS laptop
+does not fail — it silently starts a 51-minute encode against a directory the reader never chose.
+Everywhere else it dies on a path with no interpretation. Both are worse than stopping.
+
+**Decision, in three parts.**
+
+1. **The scratch directory is named by `TEXTCLF_SCRATCH`**, resolved through
+   `router/textclf/_scratch.py`, which is the only place the variable is spelled. The repo root is
+   derived from `__file__`. Resolution happens BEFORE the `transformers` import in every entry
+   point: a ten-second model import in front of a configuration error is how a reader gives up.
+   Unset is a `SystemExit` naming the variable and pointing at the README, never a
+   `FileNotFoundError` against someone else's `/tmp`.
+2. **Scratch entries are APPENDED to `sys.path`, never inserted.** The scratch directory holds
+   older copies of this directory's own file names — among them the pre-fix `finetune.py` whose
+   degenerate arm handling is the trap `router/textclf/README.md` ends on. `sys.path.insert(0, …)`
+   made those stale siblings shadow the shipped modules, so the documented reproduce command was
+   one import away from the exact model the postmortem exists to warn about.
+3. **The scratch inputs are NOT vendored, deliberately.** The chain is `evalpool` → `contrast` →
+   `oof` → `mech` → `harness`, four modules totalling ~310 lines, plus `X.npy`, `Xtext.npy`,
+   `cols.json`, `flat.json` and `costmat.json`. Those data files are derived from the licensed
+   export, so committing them violates rule 1 in `AGENTS.md` — and this repo has already shipped
+   export content to a shared remote twice. The README names every one of them instead, and
+   `tests/test_textclf_repro.py` extracts the paths from the source on each run and fails when the
+   README drifts, so the precondition list is enforced rather than asserted.
+
+**Evidence this actually works.** `evalpool.py` and `probe.py` were run end to end under the new
+resolution against the real scratch directory. `probe.py` reproduces the postmortem's headline to
+every quoted digit: frozen ModernBERT-base spend R² **0.367** / capture@100 **78.2%** against
+**0.566** / **92.2%** for hashed word 1-2-grams, i.e. the negative verdict stands and is now
+re-derivable rather than merely recorded.
+
+**Honest limit.** Because the plumbing is not vendored, this path is reproducible only by someone
+who still holds the scratch directory. That is stated in the README in those words rather than
+implied away. Vendoring the four code modules — which contain no export content — would close the
+gap and is left as a separate, larger change; it was not done on defense night.
+
+**Isolation is now pinned, not checked by hand.** i0004 was accepted on "no torch reachable from
+`make all`", which every turn since has re-verified manually. `TextclfStaysOutOfThePipeline`
+asserts that nothing outside `router/textclf/` references it and that the Makefile has no textclf
+target, so the criterion holds by test.
