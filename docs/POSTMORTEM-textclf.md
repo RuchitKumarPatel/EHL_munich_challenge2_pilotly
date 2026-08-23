@@ -110,10 +110,13 @@ Consequences that are *design compromises, not findings*:
 
 ## 5. The pre-treatment text is very nearly a row ID
 
-**Risk.** 871 distinct system-prompt hashes over 1000 rows (ADR-006). Redaction placeholders are
-renumbered *per request*, so `PII_PERSON_7` and `PII_PERSON_12` are the same entity in two rows.
-Raw un-redacted identifiers also survive inside the memory content (`C09HZA9USG0`, `U085L1GC8NA`,
-`B097V6YLCJC`). Any model fed the raw text memorises rows instead of learning the task.
+**Risk.** 871 distinct system-prompt hashes over 1000 rows (ADR-006). Redaction placeholders
+carry a per-request serial, so the same entity is numbered differently in every row it appears
+in -- two different serials of the same placeholder family are one entity, not two. Raw
+un-redacted vendor identifiers (opaque mixed-alphanumeric workspace, user and bot ids) also
+survive inside the memory content; they are quoted nowhere in this repo, because each one that
+was checked occurs in `export/` and is therefore licensed data rather than an invented example.
+Any model fed the raw text memorises rows instead of learning the task.
 
 **Mitigation applied to every text pipeline here:**
 
