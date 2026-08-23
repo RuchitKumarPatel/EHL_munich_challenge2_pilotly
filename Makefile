@@ -15,7 +15,8 @@ RESULTS := results
 .DEFAULT_GOAL := all
 
 .PHONY: all recon labels jobkey features costs model policy gates strata ope \
-        family figs report test demo clean help dirs
+        family figs report console console-check console-e2e test demo clean help dirs \
+        tooling verify
 
 ## all: run the full pipeline in dependency order
 #
@@ -26,7 +27,7 @@ RESULTS := results
 #   * `strata` and `family` each merge one section into results/estimates.json
 #     and `report` refuses to run without the "family_contrast" section, so both
 #     are part of `all`, not optional extras.
-all: dirs recon labels jobkey features costs model policy gates strata ope \
+all: dirs recon labels jobkey features costs tooling model policy gates strata ope \
      family figs report
 	@echo ""
 	@echo "pipeline complete -> $(RESULTS)/"
@@ -56,6 +57,14 @@ features: dirs
 costs: dirs
 	$(PY) -m router.costs
 
+## tooling: tool-block interventions (omit/truncate/defer) -> results/tooling.json
+#
+# Reads the export directly for per-tool definitions (recon only carries the
+# block TOTAL), plus recon.jsonl for the prefix split and jobkey.jsonl for the
+# leak-free job-history policy. Runs after both.
+tooling: dirs
+	$(PY) -m router.tooling
+
 # ---------------------------------------------------------------- stage 3: policy
 ## model: friction predictor fit on pre-treatment features only
 model: dirs
@@ -68,6 +77,15 @@ policy: dirs
 ## gates: publication gate — six negative controls (reads routes.jsonl)
 gates: dirs
 	$(PY) -m router.gates
+
+## verify: prose gate — every numeral in a user-facing artifact against claims.json
+#
+# NOT part of `all`. `all` rebuilds the claims table, and a deck half-way
+# through an edit would wedge the pipeline for the wrong reason. The contract is
+# enforced by tests/test_verify.py instead, so `make test` is the gate and this
+# target is the readable report of what bound to what.
+verify: dirs
+	$(PY) -m router.verify
 
 # ------------------------------------------------------------- stage 4: evidence
 ## strata: stratum table + support deficit       -> estimates.json["strata"]
@@ -89,6 +107,27 @@ figs: dirs
 ## report: metrics.json + claims.json + NUMBERS.md
 report: dirs
 	$(PY) -m router.report
+
+# ------------------------------------------------------------- stage 5: console
+# The console is not a pipeline stage: it writes no artifact and `all` does not
+# depend on it. It READS results/ and refuses to start without it, so it always
+# shows what the pipeline last produced rather than a cached copy of its own.
+
+## console: serve the router console on http://127.0.0.1:8765 (run `make all` first)
+console: dirs
+	$(PY) -m router.app
+
+## console-e2e: drive the console in a real browser (needs `make console` running)
+console-e2e:
+	bash tests/console_states.sh http://127.0.0.1:8765
+
+## console-check: the console's acceptance checks, no port opened
+console-check: dirs
+	$(PY) -m router.outcome
+	@echo ""
+	$(PY) -m router.serve
+	@echo ""
+	$(PY) -m router.app --selftest
 
 # ------------------------------------------------------------------ dev targets
 ## test: run the test suite (unittest; pytest if it is installed)

@@ -1,0 +1,1305 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Router-Konsole — Viktor Challenge</title>
+<style>
+/* ---------------------------------------------------------------------------
+   Instrumententafel, nicht Dashboard. Eine Richtung, konsequent: dunkler Grund,
+   Haarlinien, tabellarische Ziffern, je ein Akzent pro Bedeutung.
+
+   Bewusst EIN Erscheinungsbild (dunkel). Die Chart-Farben sind die validierten
+   Dark-Steps der Referenzpalette (Slots 1-3), geprüft gegen genau diese Fläche
+   (#16161a, --pairs all): CVD ΔE 9.4, Normalsicht ΔE 20.9, Kontrast ≥ 3:1.
+   Drei Kategorien ist kein Zufall — im Streudiagramm validieren nur die ersten
+   drei Slots über alle Paare. Deshalb kodiert die Farbe die POLICY-ART, nie das
+   einzelne Modell; Modellnamen stehen als Direktbeschriftung am Punkt.
+
+   Keine Webfont, kein CDN, keine externe Anfrage: die Konsole muss mit
+   abgeschaltetem WLAN laufen.
+   --------------------------------------------------------------------------- */
+:root {
+  color-scheme: dark;
+
+  --plane:        #0d0d0d;
+  --surface:      #16161a;
+  --panel:        #1a1a1f;
+  --raised:       #212128;
+
+  --ink:          #ffffff;
+  --ink-2:        #c3c2b7;
+  --ink-muted:    #898781;
+
+  --grid:         #2c2c2a;
+  --axis:         #383835;
+  --hairline:     rgba(255,255,255,0.10);
+
+  /* Kategorial — Policy-Art. Reihenfolge ist das CVD-Sicherheitsmerkmal. */
+  --k-logged:     #3987e5;   /* Slot 1 — der Ist-Zustand */
+  --k-router:     #d95926;   /* Slot 2 — der gatete Router, der Heldenpunkt */
+  --k-single:     #199e70;   /* Slot 3 — Einzel-Arm-Alternativen */
+
+  /* Status — reserviert, nie als vierte Serie. Immer mit Icon + Text. */
+  --s-good:       #0ca30c;
+  --s-warn:       #fab219;
+  --s-crit:       #d03b3b;
+
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+
+  --gap: 24px;
+  --rule: 1px solid var(--hairline);
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  background: var(--plane);
+  color: var(--ink-2);
+  font-family: var(--sans);
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Atmosphäre: ein einziger, sehr flacher Lichtabfall von oben links.
+   Kein Verlauf auf Flächen, die Zahlen tragen. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(1100px 620px at 12% -8%, rgba(57,135,229,0.10), transparent 62%),
+    radial-gradient(760px 520px at 92% 4%, rgba(217,89,38,0.055), transparent 58%);
+  z-index: 0;
+}
+
+.wrap { position: relative; z-index: 1; max-width: 1440px; margin: 0 auto; padding: 0 32px 96px; }
+
+/* ---------------------------------------------------------------- Typo-Rollen */
+.eyebrow {
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+}
+.num { font-variant-numeric: tabular-nums; }
+h1, h2, h3 { color: var(--ink); font-weight: 620; margin: 0; letter-spacing: -0.015em; }
+h1 { font-size: 21px; }
+h2 { font-size: 30px; letter-spacing: -0.025em; }
+h3 { font-size: 15px; }
+p { margin: 0; }
+.dim { color: var(--ink-muted); font-size: 13px; line-height: 1.55; }
+
+/* ---------------------------------------------------------------- Masthead */
+.mast {
+  display: flex; align-items: baseline; gap: 20px; flex-wrap: wrap;
+  padding: 22px 0 18px;
+  border-bottom: var(--rule);
+}
+.mast .spacer { flex: 1 1 auto; }
+.mast-stats { display: flex; gap: 22px; flex-wrap: wrap; }
+.mast-stat { display: flex; flex-direction: column; gap: 1px; }
+.mast-stat b { color: var(--ink); font-size: 14px; font-weight: 620; }
+
+/* ---------------------------------------------------------------- Sektionen */
+section { padding-top: 52px; }
+.sec-head { display: flex; align-items: flex-end; gap: 16px; margin-bottom: 6px; }
+.sec-head .rule { flex: 1 1 auto; height: 1px; background: var(--hairline); margin-bottom: 9px; }
+.sec-lede { max-width: 74ch; margin-bottom: 26px; }
+
+/* Asymmetrisch: das Diagramm bekommt das Feld, die Regler die Schiene. */
+.split { display: grid; grid-template-columns: minmax(0,1fr) 336px; gap: var(--gap); align-items: start; }
+.split.flip { grid-template-columns: 336px minmax(0,1fr); }
+
+.panel {
+  background: var(--panel);
+  border: var(--rule);
+  border-radius: 4px;
+  padding: 20px;
+}
+.panel.flush { padding: 0; overflow: hidden; }
+.panel + .panel { margin-top: 14px; }
+
+/* ---------------------------------------------------------------- Bedienung */
+.ctl { display: block; margin-bottom: 18px; }
+.ctl:last-child { margin-bottom: 0; }
+.ctl > .eyebrow { display: block; margin-bottom: 7px; }
+
+.seg { display: flex; flex-wrap: wrap; gap: 4px; }
+/* Vier Presets brechen sonst zu 3+1 um; als 2x2 liest sich das als Absicht. */
+.seg.grid2 { display: grid; grid-template-columns: 1fr 1fr; }
+.seg button {
+  flex: 1 1 auto;
+  min-width: 0;
+  font: inherit; font-size: 12.5px; font-weight: 550;
+  color: var(--ink-2);
+  background: var(--raised);
+  border: 1px solid transparent;
+  border-radius: 3px;
+  padding: 7px 9px;
+  cursor: pointer;
+  transition: background .13s ease, color .13s ease, border-color .13s ease;
+}
+.seg button:hover { color: var(--ink); background: #282830; }
+.seg button[aria-pressed="true"] {
+  background: rgba(217,89,38,0.15);
+  border-color: var(--k-router);
+  color: var(--ink);
+}
+.seg button:focus-visible { outline: 2px solid var(--k-logged); outline-offset: 2px; }
+
+select, textarea, input[type=number] {
+  font: inherit; font-size: 13.5px;
+  width: 100%;
+  color: var(--ink);
+  background: var(--raised);
+  border: 1px solid var(--hairline);
+  border-radius: 3px;
+  padding: 8px 10px;
+}
+textarea { resize: vertical; min-height: 118px; line-height: 1.55; }
+select:focus-visible, textarea:focus-visible, input:focus-visible { outline: 2px solid var(--k-logged); outline-offset: 1px; }
+
+/* Regler mit Basisrate daneben — ein Gewicht ist kein Anteil am Ergebnis. */
+.wt { margin-bottom: 13px; }
+.wt-top { display: flex; align-items: baseline; gap: 8px; margin-bottom: 3px; }
+.wt-top code { font-size: 12.5px; color: var(--ink); font-weight: 600; }
+.wt-top .val { margin-left: auto; font-size: 12.5px; color: var(--ink); }
+.wt-base { font-size: 11px; color: var(--ink-muted); margin-top: 2px; }
+
+input[type=range] { -webkit-appearance: none; appearance: none; width: 100%; height: 18px; background: transparent; cursor: pointer; }
+input[type=range]::-webkit-slider-runnable-track { height: 3px; background: var(--axis); border-radius: 2px; }
+input[type=range]::-moz-range-track { height: 3px; background: var(--axis); border-radius: 2px; }
+input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 13px; height: 13px; margin-top: -5px; border-radius: 50%; background: var(--k-router); border: 2px solid var(--panel); }
+input[type=range]::-moz-range-thumb { width: 13px; height: 13px; border-radius: 50%; background: var(--k-router); border: 2px solid var(--panel); }
+input[type=range]:focus-visible { outline: 2px solid var(--k-logged); outline-offset: 2px; }
+
+.chk { display: flex; align-items: flex-start; gap: 8px; font-size: 13px; padding: 3px 0; cursor: pointer; }
+.chk input { margin: 3px 0 0; accent-color: var(--k-router); flex: none; }
+
+.go {
+  width: 100%;
+  font: inherit; font-size: 13.5px; font-weight: 620;
+  color: #150a05;
+  background: var(--k-router);
+  border: none; border-radius: 3px;
+  padding: 11px;
+  cursor: pointer;
+  transition: filter .13s ease;
+}
+.go:hover { filter: brightness(1.11); }
+.go:disabled { opacity: .5; cursor: progress; }
+.go:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+
+/* ---------------------------------------------------------------- Diagramm */
+.chart-head { display: flex; align-items: baseline; gap: 12px; padding: 16px 20px 0; flex-wrap: wrap; }
+.chart-head .spacer { flex: 1 1 auto; }
+.legend { display: flex; gap: 16px; flex-wrap: wrap; padding: 10px 20px 0; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ink-2); }
+.legend i { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+.legend i.band { width: 3px; height: 13px; border-radius: 1px; opacity: .45; }
+.legend i.hull { width: 15px; height: 0; border-radius: 0; border-top: 2px dashed var(--k-single); }
+
+svg { display: block; width: 100%; height: auto; }
+.tick { font-size: 11px; fill: var(--ink-muted); font-variant-numeric: tabular-nums; }
+.axis-title { font-size: 11.5px; fill: var(--ink-muted); letter-spacing: 0.06em; text-transform: uppercase; }
+.pt-label { font-size: 11.5px; fill: var(--ink-2); font-variant-numeric: tabular-nums; }
+.pt-label.lead { fill: var(--ink); font-weight: 600; }
+
+.dot { transition: r .15s ease; }
+.hit { cursor: pointer; }
+.hit:hover + .dot, .hit:focus-visible + .dot { r: 9; }
+.hit:focus-visible { outline: none; }
+
+/* Ein einziger inszenierter Ladeeinsatz: die Punkte setzen sich nach Kosten
+   gestaffelt. Danach keine Bewegung mehr ohne Nutzerhandlung. */
+@keyframes settle { from { opacity: 0; transform: translateY(9px); } to { opacity: 1; transform: none; } }
+.settle { animation: settle .42s cubic-bezier(.2,.7,.3,1) both; }
+
+@keyframes grow { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+.bar-fill { transform-origin: left center; animation: grow .5s cubic-bezier(.2,.7,.3,1) both; }
+
+@media (prefers-reduced-motion: reduce) {
+  .settle, .bar-fill { animation: none; }
+  * { transition: none !important; }
+}
+
+/* ---------------------------------------------------------------- Tooltip */
+.tip {
+  position: fixed; z-index: 50;
+  pointer-events: none;
+  opacity: 0;
+  transform: translate(-50%, calc(-100% - 12px));
+  background: #0a0a0c;
+  border: 1px solid var(--hairline);
+  border-radius: 4px;
+  padding: 9px 11px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--ink-2);
+  max-width: 290px;
+  box-shadow: 0 10px 30px rgba(0,0,0,.55);
+  transition: opacity .1s ease;
+}
+.tip[data-on="1"] { opacity: 1; }
+.tip b { color: var(--ink); display: block; margin-bottom: 3px; font-size: 12.5px; }
+.tip dl { display: grid; grid-template-columns: auto auto; gap: 1px 12px; margin: 5px 0 0; }
+.tip dt { color: var(--ink-muted); }
+.tip dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; color: var(--ink-2); }
+
+/* ---------------------------------------------------------------- Tabelle */
+table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+th, td { padding: 7px 10px; text-align: right; border-bottom: 1px solid var(--grid); font-variant-numeric: tabular-nums; }
+th { color: var(--ink-muted); font-weight: 550; font-size: 11px; letter-spacing: 0.07em; text-transform: uppercase; text-align: right; }
+th:first-child, td:first-child { text-align: left; font-variant-numeric: normal; }
+tbody tr:hover { background: rgba(255,255,255,0.028); }
+td .swatch { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 7px; vertical-align: baseline; }
+details.tbl { margin-top: 14px; }
+details.tbl > summary { cursor: pointer; font-size: 12.5px; color: var(--ink-muted); padding: 7px 0; list-style: none; }
+details.tbl > summary::before { content: "▸ "; }
+details.tbl[open] > summary::before { content: "▾ "; }
+details.tbl > summary:hover { color: var(--ink); }
+
+/* ---------------------------------------------------------------- Live-Demo */
+.bars { display: flex; flex-direction: column; gap: 9px; }
+.bar-row { display: grid; grid-template-columns: 148px minmax(0,1fr) 58px; gap: 11px; align-items: center; }
+.bar-name { font-size: 12.5px; color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bar-name.is-route { color: var(--ink); font-weight: 600; }
+.bar-track { height: 15px; background: var(--raised); border-radius: 3px; overflow: hidden; }
+.bar-val { font-size: 12.5px; text-align: right; font-variant-numeric: tabular-nums; color: var(--ink); }
+
+.gates { display: flex; flex-direction: column; gap: 0; }
+.gate {
+  display: grid; grid-template-columns: 22px 1fr auto; gap: 11px; align-items: baseline;
+  padding: 10px 0; border-bottom: 1px solid var(--grid);
+}
+.gate:last-child { border-bottom: none; }
+.gate .n { font-size: 11px; color: var(--ink-muted); font-variant-numeric: tabular-nums; }
+.gate .what { font-size: 13px; }
+.gate .what b { color: var(--ink); font-weight: 600; display: block; }
+.gate .what span { font-size: 12px; color: var(--ink-muted); }
+.gate .verdict { font-size: 11px; font-weight: 620; letter-spacing: 0.06em; text-transform: uppercase; white-space: nowrap; }
+.v-pass { color: var(--s-good); }
+.v-stop { color: var(--s-crit); }
+.v-info { color: var(--ink-muted); }
+
+.note {
+  display: flex; gap: 10px; align-items: flex-start;
+  border-left: 2px solid var(--s-warn);
+  background: rgba(250,178,25,0.07);
+  padding: 11px 13px;
+  border-radius: 0 3px 3px 0;
+  font-size: 12.5px;
+  color: var(--ink-2);
+}
+.note.crit { border-left-color: var(--s-crit); background: rgba(208,59,59,0.08); }
+.note.ok { border-left-color: var(--s-good); background: rgba(12,163,12,0.06); }
+.note .ico { flex: none; font-weight: 700; }
+
+.contrib { display: flex; flex-direction: column; gap: 7px; }
+.contrib-row { display: grid; grid-template-columns: 140px minmax(0,1fr) 62px; gap: 10px; align-items: center; font-size: 12px; }
+.contrib-bar { position: relative; height: 13px; background: var(--raised); border-radius: 2px; }
+.contrib-bar .mid { position: absolute; left: 50%; top: -2px; bottom: -2px; width: 1px; background: var(--axis); }
+.contrib-bar .fill { position: absolute; top: 0; bottom: 0; border-radius: 2px; }
+
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(132px,1fr)); gap: 1px; background: var(--hairline); border: var(--rule); border-radius: 4px; overflow: hidden; }
+.kpi { background: var(--panel); padding: 15px 16px; }
+.kpi .v { font-size: 25px; color: var(--ink); font-weight: 600; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; line-height: 1.15; }
+.kpi .l { font-size: 11px; color: var(--ink-muted); margin-top: 3px; }
+
+.err { color: var(--s-crit); font-size: 13px; }
+.busy { color: var(--ink-muted); font-size: 13px; }
+
+footer { margin-top: 64px; padding-top: 24px; border-top: var(--rule); }
+footer ul { margin: 12px 0 0; padding-left: 18px; }
+footer li { font-size: 12.5px; color: var(--ink-muted); margin-bottom: 6px; line-height: 1.55; }
+footer code { color: var(--ink-2); }
+
+@media (max-width: 1080px) {
+  .split, .split.flip { grid-template-columns: minmax(0,1fr); }
+  .wrap { padding: 0 20px 64px; }
+  h2 { font-size: 25px; }
+  .bar-row { grid-template-columns: 116px minmax(0,1fr) 52px; }
+  .contrib-row { grid-template-columns: 112px minmax(0,1fr) 56px; }
+}
+</style>
+</head>
+<body>
+<div class="tip" id="tip" role="status" aria-live="polite"></div>
+
+<div class="wrap">
+
+  <header class="mast">
+    <h1>Router-Konsole</h1>
+    <span class="dim">Viktor Challenge · Off-Policy-Evaluation</span>
+    <span class="spacer"></span>
+    <div class="mast-stats" id="mast"></div>
+  </header>
+
+  <!-- =================================================== 1 — DIE FRONTIER -->
+  <section id="frontier-sec">
+    <div class="sec-head">
+      <span class="eyebrow">01 — Frontier</span>
+      <span class="rule"></span>
+    </div>
+    <h2>Was kostet weniger Friction?</h2>
+    <p class="sec-lede dim">
+      Jeder Punkt ist eine vollständige Policy über alle 1000 Trajektorien, neu vermessen.
+      X ist der geschätzte, cache-bewusste Preis. Y ist eine <b>Untergrenze</b> auf den
+      Composite Outcome Proxy: <code>1 − badness − 95%-Obergrenze auf den Anstieg</code>.
+      Bewusst keine Punktschätzung — die MDE liegt bei 11,4 pp, ein Punkt wäre Rauschen
+      im Anzug. Das Band nach oben ist die Manski-Verbreiterung: der Preis für
+      Trajektorien, deren Zielarm in ihrem Stratum nie beobachtet wurde.
+    </p>
+
+    <div class="split">
+      <div>
+        <div class="panel flush">
+          <div class="chart-head">
+            <span class="eyebrow" id="axis-y-note">Composite Outcome Proxy — Untergrenze</span>
+            <span class="spacer"></span>
+          </div>
+          <div class="legend" id="legend"></div>
+          <div id="chart"><p class="busy" style="padding:60px 20px">Lade Pipeline …</p></div>
+        </div>
+
+        <details class="tbl" open>
+          <summary>Tabellenansicht — jeder gezeichnete Punkt mit seiner Basis</summary>
+          <div class="panel flush" style="margin-top:8px"><div id="ftable"></div></div>
+        </details>
+      </div>
+
+      <aside>
+        <div class="panel">
+          <div class="ctl">
+            <span class="eyebrow">Outcome-Gewichtung</span>
+            <div class="seg grid2" id="presets"></div>
+          </div>
+          <div id="weights"></div>
+          <p class="dim" id="wdef" style="margin-top:10px"></p>
+        </div>
+
+        <div class="panel">
+          <label class="ctl">
+            <span class="eyebrow">Preisblatt (angenommen)</span>
+            <select id="sheet"></select>
+          </label>
+          <div class="ctl">
+            <span class="eyebrow">Konformes alpha <span class="num" id="alpha-v"></span></span>
+            <input type="range" id="alpha" min="0.02" max="0.30" step="0.01">
+            <p class="dim" style="margin-top:4px">
+              Obergrenze für den Anteil echt friktionaler Trajektorien, die auf einen
+              billigeren Arm dürfen.
+            </p>
+          </div>
+          <div class="ctl">
+            <span class="eyebrow">Bootstrap</span>
+            <div class="seg" id="nboot"></div>
+          </div>
+          <button class="go" type="button" id="run-frontier">Routing neu rechnen</button>
+          <p class="dim" id="fstatus" style="margin-top:9px"></p>
+        </div>
+      </aside>
+    </div>
+  </section>
+
+  <!-- ================================================= 2 — DIE LIVE-DEMO -->
+  <section id="demo-sec">
+    <div class="sec-head">
+      <span class="eyebrow">02 — Live-Demo</span>
+      <span class="rule"></span>
+    </div>
+    <h2>Welches Modell bekommt <em>dieser</em> Task?</h2>
+    <p class="sec-lede dim">
+      Tippe einen Task. Er läuft durch denselben Feature-Extraktor und dieselbe
+      Fünf-Gate-Kette wie die 1000 geloggten Zeilen. Die Prozente sind <b>unsere</b>
+      Unsicherheit, nicht die des Routers: der Router ist deterministisch. Gestreut
+      wird über die 5 Fold-Prädiktoren und den Bootstrap des konformen tau — die zwei
+      Dinge, die geschätzt und nicht beobachtet wurden.
+    </p>
+
+    <div class="split flip">
+      <aside>
+        <div class="panel">
+          <div class="ctl">
+            <span class="eyebrow">Werkzeug-Kontrakt (Gate 1)</span>
+            <div class="seg" id="lane"></div>
+            <p class="dim" style="margin-top:6px" id="lane-note"></p>
+          </div>
+          <label class="ctl">
+            <span class="eyebrow">Ausgelöst durch</span>
+            <select id="trigger"></select>
+          </label>
+          <div class="ctl">
+            <span class="eyebrow">Briefing-Blöcke</span>
+            <div id="headers"></div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="ctl">
+            <span class="eyebrow">Kontextzeilen <span class="num" id="ctx-v"></span></span>
+            <input type="range" id="ctx" min="0" max="60" step="1">
+          </div>
+          <div class="ctl">
+            <span class="eyebrow">Slack-Threads <span class="num" id="thr-v"></span></span>
+            <input type="range" id="thr" min="0" max="10" step="1">
+          </div>
+          <label class="chk"><input type="checkbox" id="img">
+            <span>Bild im Prompt <span class="dim">(Gate 2 sperrt dann jede Umleitung)</span></span></label>
+          <label class="chk" style="margin-top:6px"><input type="checkbox" id="jobkey">
+            <span>Wiederkehrender Cron-Job <span class="dim">(Block B statt globalem Prior)</span></span></label>
+          <div id="job-extra" hidden style="margin-top:10px">
+            <div class="ctl">
+              <span class="eyebrow">Bisherige Läufe <span class="num" id="runi-v"></span></span>
+              <input type="range" id="runi" min="0" max="130" step="1">
+            </div>
+            <div class="ctl" style="margin-bottom:0">
+              <span class="eyebrow">Bisherige Fehlerquote <span class="num" id="jfe-v"></span></span>
+              <input type="range" id="jfe" min="0" max="0.9" step="0.01">
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <label class="ctl">
+            <span class="eyebrow">Ist-Modell</span>
+            <select id="incumbent"></select>
+          </label>
+          <button class="go" type="button" id="run-route">Task routen</button>
+          <p class="dim" id="rstatus" style="margin-top:9px"></p>
+        </div>
+      </aside>
+
+      <div>
+        <div class="panel">
+          <label class="ctl">
+            <span class="eyebrow">Task</span>
+            <textarea id="task" spellcheck="false"></textarea>
+          </label>
+          <div class="ctl" style="margin-bottom:0">
+            <span class="eyebrow">Beispiele</span>
+            <div class="seg" id="examples"></div>
+          </div>
+        </div>
+        <div id="result"></div>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <span class="eyebrow">Woran jede Zahl hier hängt</span>
+    <ul id="caveats"></ul>
+  </footer>
+</div>
+
+<script>
+"use strict";
+
+/* =========================================================================
+   Zahlenformate. Deutsche Konvention, tabellarische Ziffern im CSS.
+   ========================================================================= */
+const nfUSD = new Intl.NumberFormat("de-DE", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+const nfPct = new Intl.NumberFormat("de-DE", { style: "percent", maximumFractionDigits: 1 });
+const nf3   = new Intl.NumberFormat("de-DE", { minimumFractionDigits: 3, maximumFractionDigits: 3 });
+const nf2   = new Intl.NumberFormat("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const pp    = v => (v >= 0 ? "+" : "−") + nf2.format(Math.abs(v)) + " pp";
+
+const $  = s => document.querySelector(s);
+const el = (tag, cls, txt) => { const n = document.createElement(tag); if (cls) n.className = cls; if (txt != null) n.textContent = txt; return n; };
+
+const SVGNS = "http://www.w3.org/2000/svg";
+function svg(tag, attrs) {
+  const n = document.createElementNS(SVGNS, tag);
+  for (const k in attrs) if (attrs[k] != null) n.setAttribute(k, attrs[k]);
+  return n;
+}
+
+const KIND_COLOR = { logged: "var(--k-logged)", operating: "var(--k-router)", single_arm: "var(--k-single)" };
+const KIND_LABEL = { logged: "logged (Ist-Zustand)", operating: "gateter Router", single_arm: "Einzel-Arm-Policy" };
+
+/* Der Zustand, den die beiden Sektionen teilen. */
+const S = { boot: null, frontier: null, weights: {}, preset: null, nboot: null, lane: "claude" };
+
+/* =========================================================================
+   Tooltip. Ein Element, positionsfest, damit es nie einen Reflow auslöst.
+   ========================================================================= */
+const tip = $("#tip");
+function showTip(html, x, y) { tip.innerHTML = html; tip.style.left = x + "px"; tip.style.top = y + "px"; tip.dataset.on = "1"; }
+function hideTip() { tip.dataset.on = "0"; }
+
+/* =========================================================================
+   Achsenhilfen: „schöne" Ticks, damit die Skala nicht bei 0,3187 anfängt.
+   ========================================================================= */
+function niceTicks(lo, hi, count) {
+  if (!(hi > lo)) { hi = lo + 1; }
+  const raw = (hi - lo) / count;
+  const mag = Math.pow(10, Math.floor(Math.log10(raw)));
+  const norm = raw / mag;
+  /* Mit 2,5 auf der Leiter. Ohne diese Stufe springt ein Wertebereich von 0,11
+     direkt von Schritt 0,02 auf 0,05 und die Achse trägt nur zwei Beschriftungen. */
+  const step = (norm > 5 ? 10 : norm > 2.5 ? 5 : norm > 2 ? 2.5 : norm > 1 ? 2 : 1) * mag;
+  const out = [];
+  for (let t = Math.ceil(lo / step) * step; t <= hi + step * 1e-9; t += step) out.push(t);
+  return out;
+}
+
+/* Beschriftungen kollisionsfrei setzen.
+
+   Eine reine Spalten-Staffelung reicht nicht: drei gpt-Arme kosten exakt gleich
+   viel (ihre Punkte liegen übereinander), der gatete Router steht daneben, und
+   seine nach rechts laufende Beschriftung ragt in deren Spalte hinein. Geprüft
+   wird deshalb die tatsächliche Textbox, nicht die x-Nähe der Punkte.
+
+   Verschoben wird immer nach unten, nie nach oben: so bleibt die Reihenfolge von
+   oben nach unten die Reihenfolge der Werte, und das Diagramm lügt nicht über
+   den Rang. Was unten anstößt, wird als Block wieder hochgezogen. */
+const LABEL_H = 14;      // Zeilenhöhe der Beschriftung
+const CHAR_W = 6.4;      // Näherung für die Textbreite bei 11,5px
+
+function placeLabels(items, lo, hi) {
+  const placed = [];
+  for (const it of items.slice().sort((a, b) => a.y - b.y)) {
+    let y = it.y;
+    let moved = true;
+    while (moved) {
+      moved = false;
+      for (const q of placed) {
+        const xHit = it.x0 < q.x1 && q.x0 < it.x1;
+        if (!xHit || Math.abs(y - q.y) >= LABEL_H) continue;
+        const ny = q.y + LABEL_H;
+        // FORTSCHRITT ERZWINGEN. `ny > y` ist die Abbruchgarantie, nicht Kosmetik:
+        // y = q.y + LABEL_H ergibt in Fließkomma einen Wert, dessen Abstand zu
+        // q.y knapp UNTER LABEL_H liegen kann (14.0 wird zu 13.999999999999972).
+        // Ohne diese Bedingung gilt die Kollision danach weiter, y bleibt gleich,
+        // und die Schleife läuft ewig — die Seite fror bei jeder Datenlage ein,
+        // in der zwei Beschriftungen überhaupt kollidierten. So wächst y bei
+        // jeder Verschiebung echt, und die Schleife endet nach höchstens
+        // placed.length Schritten.
+        if (ny > y) { y = ny; moved = true; }
+      }
+    }
+    it.y = y;
+    placed.push(it);
+  }
+  const over = Math.max(...items.map(i => i.y), -Infinity) - hi;
+  if (over > 0) for (const it of items) it.y = Math.max(lo, it.y - over);
+  return items;
+}
+
+/* =========================================================================
+   Das Streudiagramm.
+   Farbe kodiert die POLICY-ART (3 Kategorien — genau so viele, wie die
+   Palette über alle Paare trägt). Das Modell steht als Text am Punkt.
+   ========================================================================= */
+function renderFrontier(data) {
+  const host = $("#chart");
+  host.textContent = "";
+
+  const W = 900, H = 520;
+  const M = { t: 22, r: 104, b: 58, l: 74 };
+  const iw = W - M.l - M.r, ih = H - M.t - M.b;
+
+  const pts = data.points;
+  const xs = pts.map(p => p.cost_usd);
+  const ys = pts.flatMap(p => [p.outcome_floor, p.outcome_identified]);
+  const x0 = Math.min(...xs), x1 = Math.max(...xs);
+  const y0 = Math.min(...ys), y1 = Math.max(...ys);
+  const xPad = (x1 - x0) * 0.09 || 1;
+  const yPad = (y1 - y0) * 0.16 || 0.01;
+  const xLo = Math.max(0, x0 - xPad), xHi = x1 + xPad;
+  const yLo = y0 - yPad, yHi = y1 + yPad;
+
+  const X = v => M.l + (v - xLo) / (xHi - xLo) * iw;
+  const Y = v => M.t + ih - (v - yLo) / (yHi - yLo) * ih;
+
+  const root = svg("svg", { viewBox: `0 0 ${W} ${H}`, role: "img",
+    "aria-label": "Kosten-Outcome-Frontier: geschätzte Kosten auf der X-Achse, Untergrenze des Composite Outcome Proxy auf der Y-Achse" });
+
+  /* --- Gitter, zurückhaltend --- */
+  const g = svg("g", null);
+  for (const t of niceTicks(yLo, yHi, 5)) {
+    g.appendChild(svg("line", { x1: M.l, x2: M.l + iw, y1: Y(t), y2: Y(t), stroke: "var(--grid)", "stroke-width": 1 }));
+    const lab = svg("text", { x: M.l - 11, y: Y(t) + 4, "text-anchor": "end", class: "tick" });
+    lab.textContent = nf3.format(t);
+    g.appendChild(lab);
+  }
+  for (const t of niceTicks(xLo, xHi, 5)) {
+    g.appendChild(svg("line", { x1: X(t), x2: X(t), y1: M.t, y2: M.t + ih, stroke: "var(--grid)", "stroke-width": 1 }));
+    const lab = svg("text", { x: X(t), y: M.t + ih + 20, "text-anchor": "middle", class: "tick" });
+    lab.textContent = nfUSD.format(t);
+    g.appendChild(lab);
+  }
+  g.appendChild(svg("line", { x1: M.l, x2: M.l + iw, y1: M.t + ih, y2: M.t + ih, stroke: "var(--axis)", "stroke-width": 1 }));
+  g.appendChild(svg("line", { x1: M.l, x2: M.l, y1: M.t, y2: M.t + ih, stroke: "var(--axis)", "stroke-width": 1 }));
+  root.appendChild(g);
+
+  const ax = svg("text", { x: M.l + iw / 2, y: H - 12, "text-anchor": "middle", class: "axis-title" });
+  ax.textContent = "geschätzte Kosten (cache-bewusst, input-seitig, angenommenes Blatt)";
+  root.appendChild(ax);
+  const ay = svg("text", { x: 16, y: M.t + ih / 2, "text-anchor": "middle", class: "axis-title",
+    transform: `rotate(-90 16 ${M.t + ih / 2})` });
+  ay.textContent = "Composite Outcome Proxy — Untergrenze";
+  root.appendChild(ay);
+
+  /* --- Referenzlinie: das Niveau, das der Ist-Zustand hält --- */
+  const logged = pts.find(p => p.kind === "logged");
+  if (logged) {
+    root.appendChild(svg("line", { x1: M.l, x2: M.l + iw, y1: Y(logged.outcome_floor), y2: Y(logged.outcome_floor),
+      stroke: "var(--k-logged)", "stroke-width": 1, "stroke-dasharray": "2 4", opacity: .5 }));
+  }
+
+  /* --- Mischungs-Frontier über die Einzel-Arm-Policies ---
+     Eine Mischung zweier Einzel-Arm-Policies ist selbst erreichbar, also ist
+     die Strecke dazwischen eine echte Option — der gatete Router muss sie
+     schlagen, nicht bloß die Punkte, zwischen denen er liegt. */
+  if (data.hull && data.hull.length > 1) {
+    const d = data.hull.map((h, i) => `${i ? "L" : "M"}${X(h.cost_usd)},${Y(h.outcome_floor)}`).join(" ");
+    root.appendChild(svg("path", { d, fill: "none", stroke: "var(--k-single)", "stroke-width": 2,
+      "stroke-dasharray": "6 5", opacity: .75, "stroke-linecap": "round" }));
+  }
+
+  /* --- Bänder + Punkte, nach Kosten gestaffelt eingeblendet --- */
+  const order = pts.slice().sort((a, b) => a.cost_usd - b.cost_usd);
+  const marks = svg("g", null);
+  order.forEach((p, i) => {
+    const color = KIND_COLOR[p.kind];
+    const gp = svg("g", { class: "settle" });
+    gp.style.animationDelay = (i * 55) + "ms";
+
+    const yF = Y(p.outcome_floor), yI = Y(p.outcome_identified);
+    if (Math.abs(yF - yI) > 0.6) {
+      gp.appendChild(svg("line", { x1: X(p.cost_usd), x2: X(p.cost_usd), y1: yF, y2: yI,
+        stroke: color, "stroke-width": 3, opacity: .38, "stroke-linecap": "round" }));
+      for (const yy of [yF, yI]) {
+        gp.appendChild(svg("line", { x1: X(p.cost_usd) - 4, x2: X(p.cost_usd) + 4, y1: yy, y2: yy,
+          stroke: color, "stroke-width": 1.5, opacity: .55 }));
+      }
+    }
+
+    const hero = p.kind === "operating";
+    /* 2px Flächenring auf überlappenden Marken. */
+    gp.appendChild(svg("circle", { cx: X(p.cost_usd), cy: yF, r: hero ? 9 : 7.5,
+      fill: "var(--surface)", stroke: "var(--surface)", "stroke-width": 2 }));
+    const hit = svg("circle", { cx: X(p.cost_usd), cy: yF, r: 16, fill: "transparent",
+      class: "hit", tabindex: "0", role: "button",
+      "aria-label": `${p.label}: ${nfUSD.format(p.cost_usd)}, Untergrenze ${nf3.format(p.outcome_floor)}` });
+    gp.appendChild(hit);
+    gp.appendChild(svg("circle", { cx: X(p.cost_usd), cy: yF, r: hero ? 7 : 5.5,
+      fill: color, class: "dot", stroke: hero ? "var(--ink)" : "none", "stroke-width": hero ? 1.5 : 0 }));
+
+    const tipHtml =
+      `<b>${p.label}</b>` +
+      `<dl>` +
+      `<dt>Kosten</dt><dd>${nfUSD.format(p.cost_usd)}</dd>` +
+      `<dt>Outcome-Untergrenze</dt><dd>${nf3.format(p.outcome_floor)}</dd>` +
+      `<dt>Friction-Obergrenze</dt><dd>${pp(p.bound_pp)}</dd>` +
+      `<dt>davon Manski</dt><dd>${pp(p.manski_pp)}</dd>` +
+      `<dt>extrapolierter Spend</dt><dd>${nfPct.format(p.extrapolated_spend_share)}</dd>` +
+      `<dt>umgeleitet</dt><dd>${p.n_switched}</dd>` +
+      `</dl>`;
+    const move = () => {
+      const r = root.getBoundingClientRect();
+      showTip(tipHtml, r.left + X(p.cost_usd) / W * r.width, r.top + yF / H * r.height);
+    };
+    hit.addEventListener("mouseenter", move);
+    hit.addEventListener("focus", move);
+    hit.addEventListener("mouseleave", hideTip);
+    hit.addEventListener("blur", hideTip);
+
+    marks.appendChild(gp);
+    p._y = yF; p._x = X(p.cost_usd); p._color = color;
+  });
+  root.appendChild(marks);
+
+  /* --- Direktbeschriftung: gestaffelt, damit identisch bepreiste Arme lesbar
+         bleiben. Nur so trägt die Identität nicht allein über die Farbe.
+
+     Die Beschriftung steht NEBEN ihrem Punkt, nicht in einer Rinne am rechten
+     Rand. Eine Rinne zwingt der billigsten Policy eine Leitlinie quer über das
+     ganze Feld auf, und eine lange waagerechte Linie durch ein Streudiagramm
+     liest sich als Trend, den es nicht gibt. Wer nach rechts nicht mehr passt,
+     wird nach links beschriftet.
+
+     Geprüft wird die tatsächliche Textbox, damit auch Beschriftungen aus
+     benachbarten Kostenspalten sich nicht überlagern. --- */
+  /* Seitenwahl nach freiem Raum bis zur nächsten Kostenspalte, nicht fix nach
+     rechts: sonst legt sich die Beschriftung des Routers ($375) über das
+     Unsicherheitsband der drei gpt-Arme ($413) gleich daneben. */
+  const xsAll = pts.map(q => q._x);
+  const labels = pts.map(p => {
+    const name = p.kind === "single_arm" ? p.arm
+      : (p.kind === "logged" ? "logged" : "gateter Router");
+    const w = name.length * CHAR_W;
+    const nextR = Math.min(M.l + iw + M.r - 8, ...xsAll.filter(x => x > p._x + 2));
+    const nextL = Math.max(M.l + 4, ...xsAll.filter(x => x < p._x - 2));
+    const roomR = nextR - (p._x + 14);
+    const roomL = (p._x - 14) - nextL;
+    const right = roomR >= w || roomR >= roomL;
+    const lx = right ? p._x + 14 : p._x - 14;
+    return { p, name, right, lx, y: p._y,
+             x0: right ? lx : lx - w, x1: right ? lx + w : lx };
+  });
+  placeLabels(labels, M.t + 8, M.t + ih - 4);
+  for (const { p, name, right, lx, y } of labels) {
+    const t = svg("text", { x: lx, y: y + 4,
+      class: "pt-label" + (p.kind === "operating" ? " lead" : ""),
+      "text-anchor": right ? "start" : "end" });
+    t.textContent = name;
+    root.appendChild(t);
+    if (Math.abs(y - p._y) > 3) {
+      root.appendChild(svg("line", { x1: p._x + (right ? 9 : -9), x2: lx + (right ? -3 : 3),
+        y1: p._y, y2: y, stroke: p._color, "stroke-width": 1, opacity: .4 }));
+    }
+  }
+
+  host.appendChild(root);
+}
+
+function renderLegend() {
+  const box = $("#legend");
+  box.textContent = "";
+  for (const k of ["logged", "operating", "single_arm"]) {
+    const s = el("span");
+    const i = el("i"); i.style.background = KIND_COLOR[k];
+    s.appendChild(i); s.appendChild(document.createTextNode(KIND_LABEL[k]));
+    box.appendChild(s);
+  }
+  const b = el("span");
+  const bi = el("i", "band"); bi.style.background = "var(--ink-2)";
+  b.appendChild(bi); b.appendChild(document.createTextNode("Manski-Verbreiterung"));
+  box.appendChild(b);
+  const h = el("span");
+  h.appendChild(el("i", "hull")); h.appendChild(document.createTextNode("Mischungs-Frontier"));
+  box.appendChild(h);
+}
+
+function renderFrontierTable(data) {
+  const host = $("#ftable");
+  host.textContent = "";
+  const t = el("table");
+  t.innerHTML = "<thead><tr><th>Policy</th><th>Kosten USD</th><th>Outcome-Untergrenze</th>" +
+    "<th>Friction ≤</th><th>davon Manski</th><th>extrap. Spend</th><th>umgeleitet</th></tr></thead>";
+  const tb = el("tbody");
+  for (const p of data.points.slice().sort((a, b) => a.cost_usd - b.cost_usd)) {
+    const tr = el("tr");
+    const c = el("td");
+    const sw = el("span", "swatch"); sw.style.background = KIND_COLOR[p.kind];
+    c.appendChild(sw); c.appendChild(document.createTextNode(p.label));
+    tr.appendChild(c);
+    for (const v of [nfUSD.format(p.cost_usd), nf3.format(p.outcome_floor), pp(p.bound_pp),
+                     pp(p.manski_pp), nfPct.format(p.extrapolated_spend_share), String(p.n_switched)]) {
+      tr.appendChild(el("td", null, v));
+    }
+    tb.appendChild(tr);
+  }
+  t.appendChild(tb);
+  host.appendChild(t);
+}
+
+/* =========================================================================
+   Live-Demo: Balken (eine Serie, eine Farbe), Gate-Kette, Beitragsanalyse.
+   ========================================================================= */
+function renderResult(d) {
+  const host = $("#result");
+  host.textContent = "";
+
+  const entries = Object.entries(d.distribution).sort((a, b) => b[1] - a[1]);
+  const lead = entries[0];
+
+  /* --- Kopfzahlen --- */
+  const kp = el("div", "kpis");
+  const mk = (v, l) => { const k = el("div", "kpi"); k.appendChild(el("div", "v", v)); k.appendChild(el("div", "l", l)); return k; };
+  kp.appendChild(mk(lead ? nfPct.format(lead[1]) : "—", "auf " + (lead ? lead[0] : "—")));
+  kp.appendChild(mk(nfPct.format(d.p_tau_pass), "Ziehungen unter tau"));
+  kp.appendChild(mk(nf3.format(d.tau_point), "tau (Punkt)"));
+  kp.appendChild(mk(String(d.n_draws), "Ziehungen (5 Folds × tau)"));
+  host.appendChild(kp);
+
+  /* --- Stützungswarnung, falls der Task außerhalb der Wolke liegt --- */
+  const sup = d.support;
+  const nb = el("div", "panel");
+  const bad = sup.never_seen.length || !sup.in_range;
+  const note = el("div", "note " + (bad ? "crit" : (sup.rare.length ? "" : "ok")));
+  note.appendChild(el("span", "ico", bad ? "!" : "✓"));
+  note.appendChild(el("span", null, sup.note));
+  nb.appendChild(note);
+  host.appendChild(nb);
+
+  /* --- Die Verteilung. EINE Serie, also EINE Farbe und Direktwerte. --- */
+  const bp = el("div", "panel");
+  bp.appendChild(el("h3", null, "Wahrscheinlichkeit je Modell"));
+  bp.appendChild(el("p", "dim", "Anteil der Ziehungen, die auf diesem Arm landen — " + d.ui.incumbent_mode + "."));
+  const bars = el("div", "bars");
+  bars.style.marginTop = "14px";
+  const max = Math.max(...entries.map(e => e[1]), 0.0001);
+  entries.forEach(([arm, prob], i) => {
+    const row = el("div", "bar-row");
+    const nm = el("div", "bar-name" + (i === 0 ? " is-route" : ""), arm);
+    nm.title = arm;
+    const track = el("div", "bar-track");
+    const fill = el("div", "bar-fill");
+    fill.style.cssText = `height:100%;width:${(prob / max * 100).toFixed(2)}%;background:var(--k-logged);border-radius:3px`;
+    fill.style.animationDelay = (i * 60) + "ms";
+    track.appendChild(fill);
+    row.appendChild(nm); row.appendChild(track);
+    row.appendChild(el("div", "bar-val", nfPct.format(prob)));
+    bars.appendChild(row);
+  });
+  bp.appendChild(bars);
+  host.appendChild(bp);
+
+  /* --- Die Gate-Kette für den führenden Ist-Arm --- */
+  const inc = d.lead_incumbent;
+  const pi = d.per_incumbent[inc];
+  const gt = pi.gates;
+  const gp = el("div", "panel");
+  gp.appendChild(el("h3", null, "Gate-Kette"));
+  gp.appendChild(el("p", "dim", `Ist-Modell ${inc} · p_fric ${nf3.format(pi.p_fric_mean)} ` +
+    `(Folds ${nf3.format(pi.p_fric_lo)}–${nf3.format(pi.p_fric_hi)})`));
+  const gl = el("div", "gates");
+  gl.style.marginTop = "12px";
+  const rows = [
+    ["1", "Family-Lane", "aus dem Werkzeug-Kontrakt gelesen, nie gewählt", gt.family, "v-info"],
+    ["2", "Vision-Gate", "Bild vor dem ersten User-Turn sperrt jede Umleitung",
+      gt.vision ? "gesperrt" : "frei", gt.vision ? "v-stop" : "v-pass"],
+    ["3", "Zulässige Arme", "mindestens 21 geloggte Läufe",
+      gt.admissible.length ? gt.admissible.join(", ") : "keine", gt.admissible.length ? "v-pass" : "v-stop"],
+    ["4", "Vorzeichenstabil billiger", "billiger unter ALLEN drei angenommenen Blättern",
+      gt.sign_stable.length ? gt.sign_stable.join(", ") : "kein Ziel", gt.sign_stable.length ? "v-pass" : "v-stop"],
+    ["5", "tau-Gate", "kalibriertes p_fric ≤ tau",
+      gt.tau_pass ? "passiert" : "gehalten", gt.tau_pass ? "v-pass" : "v-stop"],
+  ];
+  for (const [n, title, sub, verdict, cls] of rows) {
+    const r = el("div", "gate");
+    r.appendChild(el("div", "n", n));
+    const w = el("div", "what");
+    w.appendChild(el("b", null, title));
+    w.appendChild(el("span", null, sub));
+    r.appendChild(w);
+    r.appendChild(el("div", "verdict " + cls, verdict));
+    gl.appendChild(r);
+  }
+  gp.appendChild(gl);
+  host.appendChild(gp);
+
+  /* --- Warum dieser Task und nicht irgendeiner --- */
+  const ep = el("div", "panel");
+  ep.appendChild(el("h3", null, "Warum dieser Score"));
+  ep.appendChild(el("p", "dim", d.ui.explain_basis));
+  const cl = el("div", "contrib");
+  cl.style.marginTop = "13px";
+  const mx = Math.max(...d.explain.top.map(t => Math.abs(t.contribution)), 0.0001);
+  for (const t of d.explain.top) {
+    const row = el("div", "contrib-row");
+    const nm = el("div", null, t.col);
+    nm.style.color = "var(--ink-2)";
+    if (t.caveat) {
+      nm.textContent = t.col + " ⚠";
+      nm.title = t.caveat;
+      nm.style.color = "var(--s-warn)";
+      nm.style.cursor = "help";
+    }
+    const bar = el("div", "contrib-bar");
+    bar.appendChild(el("div", "mid"));
+    const f = el("div", "fill");
+    const w = Math.abs(t.contribution) / mx * 50;
+    const pos = t.contribution >= 0;
+    f.style.cssText = `left:${pos ? 50 : 50 - w}%;width:${w}%;` +
+      `background:${pos ? "var(--s-crit)" : "var(--s-good)"};opacity:${t.sign_stable ? .95 : .45}`;
+    bar.appendChild(f);
+    bar.title = (pos ? "erhöht" : "senkt") + " das Friction-Risiko" +
+      (t.sign_stable ? "" : " — Vorzeichen NICHT über alle Folds stabil");
+    row.appendChild(nm); row.appendChild(bar);
+    row.appendChild(el("div", null, nf2.format(t.contribution)));
+    cl.appendChild(row);
+  }
+  ep.appendChild(cl);
+  const lg = el("p", "dim");
+  lg.style.marginTop = "12px";
+  lg.innerHTML = '<span style="color:var(--s-crit)">■</span> erhöht das Friction-Risiko &nbsp; ' +
+    '<span style="color:var(--s-good)">■</span> senkt es &nbsp; · &nbsp; ' +
+    'blass = Vorzeichen nicht über alle 5 Folds stabil &nbsp; · &nbsp; ' +
+    '⚠ = Vorzeichen umgekehrt gegenüber der Einzelkorrelation (draufzeigen)';
+  ep.appendChild(lg);
+  host.appendChild(ep);
+}
+
+/* =========================================================================
+   Bedienelemente aufbauen
+   ========================================================================= */
+function buildFrontierControls(boot) {
+  const mast = $("#mast");
+  mast.textContent = "";
+  const stat = (v, l) => {
+    const d = el("div", "mast-stat");
+    d.appendChild(el("b", "num", v));
+    d.appendChild(el("span", "eyebrow", l));
+    return d;
+  };
+  mast.appendChild(stat(String(boot.n_trajectories), "Trajektorien"));
+  mast.appendChild(stat(String(Object.keys(boot.arm_counts).length), "Arme"));
+  mast.appendChild(stat(nf3.format(boot.tau_point), "tau"));
+
+  const ps = $("#presets");
+  ps.textContent = "";
+  for (const name of Object.keys(boot.presets)) {
+    const b = el("button", null, name);
+    b.type = "button";
+    b.title = boot.preset_notes[name] || "";
+    b.setAttribute("aria-pressed", String(name === boot.default_preset));
+    b.onclick = () => {
+      S.preset = name;
+      S.weights = Object.assign({}, boot.presets[name]);
+      for (const kid of ps.children) kid.setAttribute("aria-pressed", String(kid === b));
+      syncWeights();
+    };
+    ps.appendChild(b);
+  }
+
+  const ws = $("#weights");
+  ws.textContent = "";
+  for (const c of boot.component_order) {
+    const base = boot.components[c];
+    const box = el("div", "wt");
+    const top = el("div", "wt-top");
+    top.appendChild(el("code", null, c));
+    const val = el("span", "val num", "");
+    top.appendChild(val);
+    box.appendChild(top);
+    const r = document.createElement("input");
+    r.type = "range"; r.min = "0"; r.max = "1"; r.step = "0.05"; r.dataset.comp = c;
+    r.setAttribute("aria-label", "Gewicht " + c);
+    r.oninput = () => {
+      S.weights[c] = Number(r.value);
+      S.preset = null;
+      for (const kid of $("#presets").children) kid.setAttribute("aria-pressed", "false");
+      syncWeights();
+    };
+    box.appendChild(r);
+    box.appendChild(el("div", "wt-base",
+      `Basisrate ${nfPct.format(base.count_weighted)} der Läufe · ${nfPct.format(base.spend_weighted)} des Spend`));
+    box.title = base.note;
+    box._val = val;
+    ws.appendChild(box);
+  }
+
+  const sh = $("#sheet");
+  for (const s of boot.sheets) {
+    const o = document.createElement("option");
+    o.value = s;
+    o.textContent = s + (s === boot.default_sheet ? "  (Standard)" : "");
+    sh.appendChild(o);
+  }
+  sh.value = boot.default_sheet;
+
+  $("#alpha").value = boot.default_alpha;
+  $("#alpha-v").textContent = nf2.format(boot.default_alpha);
+  $("#alpha").oninput = e => { $("#alpha-v").textContent = nf2.format(Number(e.target.value)); };
+
+  const nb = $("#nboot");
+  nb.textContent = "";
+  S.nboot = boot.n_boot.interactive;
+  for (const [label, v] of [["schnell · " + boot.n_boot.interactive, boot.n_boot.interactive],
+                            ["publiziert · " + boot.n_boot.published, boot.n_boot.published]]) {
+    const b = el("button", null, label);
+    b.type = "button";
+    b.setAttribute("aria-pressed", String(v === S.nboot));
+    b.onclick = () => {
+      S.nboot = v;
+      for (const kid of nb.children) kid.setAttribute("aria-pressed", String(kid === b));
+    };
+    nb.appendChild(b);
+  }
+
+  S.preset = boot.default_preset;
+  S.weights = Object.assign({}, boot.presets[boot.default_preset]);
+  syncWeights();
+}
+
+function syncWeights() {
+  const total = Object.values(S.weights).reduce((a, b) => a + b, 0);
+  for (const box of $("#weights").children) {
+    const r = box.querySelector("input");
+    r.value = S.weights[r.dataset.comp];
+    box._val.textContent = total > 0 ? nfPct.format(S.weights[r.dataset.comp] / total) : "—";
+  }
+  $("#wdef").textContent = total > 0
+    ? "Normiert auf Summe 1. Eine ERKLÄRTE Gewichtung — nenne sie mit jeder Zahl."
+    : "Alle Gewichte null — das ist keine Metrik.";
+}
+
+const EXAMPLES = [
+  ["Cron-Ping", { task: "Post the daily standup reminder in the team channel.",
+                  trigger: "cron", ctx: 2, thr: 0, headers: ["hdr_thread_info"] }],
+  ["Slack-Eskalation", { task: "The nightly ETL failed again. Read the last three execution logs, find the failing step, patch the config and report back in this thread with what you changed.",
+                  trigger: "slack_mention", ctx: 42, thr: 7,
+                  headers: ["hdr_thread_info", "hdr_channel_thread", "hdr_recent_dm"] }],
+  ["Cron mit Historie", { task: "Summarise yesterday's incidents and post the digest to the ops channel.",
+                  trigger: "cron", ctx: 12, thr: 1, headers: ["hdr_thread_info", "hdr_cron_history"] }],
+  ["Bild-Task", { task: "What does this dashboard screenshot show? Flag anything that looks off.",
+                  trigger: "slack_dm", ctx: 3, thr: 1, headers: ["hdr_thread_info"], img: true }],
+];
+
+/* Ein Beispiel auf die Bedienelemente legen. `andRun` trennt den Klick (soll
+   sofort routen) von der URL-Vorbelegung (der Startlauf kommt ohnehin gleich,
+   ein zweiter Request wäre nur doppelte Arbeit auf einem kalten Server). */
+function applyExample(cfg, andRun) {
+  $("#task").value = cfg.task;
+  $("#trigger").value = cfg.trigger;
+  $("#ctx").value = cfg.ctx; $("#ctx").dispatchEvent(new Event("input"));
+  $("#thr").value = cfg.thr; $("#thr").dispatchEvent(new Event("input"));
+  $("#img").checked = !!cfg.img;
+  for (const lab of $("#headers").children) {
+    const cb = lab.querySelector("input");
+    cb.checked = cfg.headers.includes(cb.value);
+  }
+  if (andRun) runRoute();
+}
+
+function buildDemoControls(boot) {
+  const ln = $("#lane");
+  ln.textContent = "";
+  for (const lane of ["claude", "gpt"]) {
+    const b = el("button", null, lane + "-Lane");
+    b.type = "button";
+    b.setAttribute("aria-pressed", String(lane === S.lane));
+    b.onclick = () => {
+      S.lane = lane;
+      for (const kid of ln.children) kid.setAttribute("aria-pressed", String(kid === b));
+      syncLane(boot);
+    };
+    ln.appendChild(b);
+  }
+
+  const tr = $("#trigger");
+  for (const t of boot.triggers) {
+    const o = document.createElement("option");
+    o.value = t; o.textContent = t;
+    tr.appendChild(o);
+  }
+  tr.value = "cron";
+
+  const hs = $("#headers");
+  hs.textContent = "";
+  for (const h of boot.header_blocks) {
+    const lab = el("label", "chk");
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.value = h;
+    /* 987 von 1000 geloggten Zeilen tragen den Thread-Info-Block. Ihn per
+       Vorgabe wegzulassen hieße, jeden Demo-Task untypisch zu machen. */
+    cb.checked = (h === "hdr_thread_info");
+    lab.appendChild(cb);
+    lab.appendChild(el("span", null, h.replace("hdr_", "")));
+    hs.appendChild(lab);
+  }
+
+  const bind = (sel, out, fmt) => {
+    const s = $(sel);
+    const upd = () => { $(out).textContent = fmt(Number(s.value)); };
+    s.oninput = upd;
+    upd();
+  };
+  $("#ctx").value = 10;   bind("#ctx", "#ctx-v", v => String(v));
+  $("#thr").value = 0;    bind("#thr", "#thr-v", v => String(v));
+  $("#runi").value = 12;  bind("#runi", "#runi-v", v => String(v));
+  $("#jfe").value = 0.26; bind("#jfe", "#jfe-v", v => nfPct.format(v));
+  $("#jobkey").onchange = e => { $("#job-extra").hidden = !e.target.checked; };
+
+  const ex = $("#examples");
+  ex.textContent = "";
+  for (const [name, cfg] of EXAMPLES) {
+    const b = el("button", null, name);
+    b.type = "button";
+    b.onclick = () => applyExample(cfg, true);
+    ex.appendChild(b);
+  }
+
+  $("#task").value = EXAMPLES[2][1].task;
+  syncLane(boot);
+}
+
+function syncLane(boot) {
+  const info = boot.lanes[S.lane];
+  const sel = $("#incumbent");
+  sel.textContent = "";
+  const any = document.createElement("option");
+  any.value = "";
+  any.textContent = "über den geloggten Mix mitteln";
+  sel.appendChild(any);
+  for (const [arm, share] of Object.entries(info.incumbents)) {
+    const o = document.createElement("option");
+    o.value = arm;
+    o.textContent = `${arm} — ${nfPct.format(share)} der Lane`;
+    sel.appendChild(o);
+  }
+  $("#lane-note").textContent = `Werkzeuge: ${info.tools.join(", ")}. ` +
+    (S.lane === "gpt"
+      ? "In dieser Lane bepreisen sich sol und terra unter jedem Blatt identisch — Gate 4 findet kein vorzeichenstabil billigeres Ziel, der Router lehnt jede Umleitung ab."
+      : "Gate 1 liest die Lane aus dem Werkzeug-Kontrakt; ein Lane-Wechsel wäre ein anderer Vertrag, keine Preisentscheidung.");
+}
+
+/* =========================================================================
+   Netzwerk (lokal)
+   ========================================================================= */
+async function post(url, body) {
+  const r = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const j = await r.json();
+  if (!r.ok) throw new Error(j.error || ("HTTP " + r.status));
+  return j;
+}
+
+async function runFrontier() {
+  const btn = $("#run-frontier"), st = $("#fstatus");
+  btn.disabled = true;
+  st.className = "busy";
+  st.textContent = `rechne ${S.nboot} Bootstrap-Replikate über 9 Policies …`;
+  try {
+    const total = Object.values(S.weights).reduce((a, b) => a + b, 0);
+    if (!(total > 0)) throw new Error("Alle Gewichte sind null — das ist keine Metrik.");
+    const data = await post("/api/frontier", {
+      weights: S.weights,
+      sheet: $("#sheet").value,
+      alpha: Number($("#alpha").value),
+      n_boot: S.nboot,
+    });
+    S.frontier = data;
+    renderFrontier(data);
+    renderFrontierTable(data);
+    $("#axis-y-note").textContent = data.outcome.definition;
+    st.className = "dim";
+    st.textContent = data.outcome.caveat_de;
+  } catch (e) {
+    st.className = "err";
+    st.textContent = e.message;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function runRoute() {
+  const btn = $("#run-route"), st = $("#rstatus");
+  btn.disabled = true;
+  st.className = "busy";
+  st.textContent = "ziehe 5 Folds × tau-Bootstrap …";
+  try {
+    const headers = [...$("#headers").querySelectorAll("input:checked")].map(i => i.value);
+    const d = await post("/api/route", {
+      task: $("#task").value,
+      lane: S.lane,
+      trigger: $("#trigger").value,
+      headers,
+      ctx_lines: Number($("#ctx").value),
+      n_threads: Number($("#thr").value),
+      images: $("#img").checked ? 1 : 0,
+      has_job_key: $("#jobkey").checked,
+      job_run_index: Number($("#runi").value),
+      job_fric_eb: $("#jobkey").checked ? Number($("#jfe").value) : null,
+      incumbent: $("#incumbent").value,
+      alpha: Number($("#alpha").value),
+      sheet: $("#sheet").value,
+    });
+    renderResult(d);
+    st.className = "dim";
+    st.textContent = d.ui.basis;
+  } catch (e) {
+    st.className = "err";
+    st.textContent = e.message;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+/* =========================================================================
+   Zustand aus der URL.
+
+   Fünf Minuten auf der Bühne sind keine Zeit, um vier Regler zu suchen. Eine
+   URL wie ?preset=repo_baseline&lane=gpt&example=Slack legt die Konsole direkt
+   auf den Zustand, den die nächste Folie braucht — und macht denselben Zustand
+   ohne Browser-Treiber prüfbar (`chrome --dump-dom "…?preset=…"`).
+
+   Unbekannte Werte werden ignoriert, nie geraten: eine vertippte URL zeigt den
+   Standardzustand, statt still einen anderen zu wählen.
+   ========================================================================= */
+function applyQuery(boot) {
+  const q = new URLSearchParams(location.search);
+  const hit = (sel, text) => {
+    const b = [...document.querySelectorAll(sel)].find(n => n.textContent.includes(text));
+    if (b) b.click();
+    return !!b;
+  };
+
+  const preset = q.get("preset");
+  if (preset && boot.presets[preset]) hit("#presets button", preset);
+
+  const sheet = q.get("sheet");
+  if (sheet && boot.sheets.includes(sheet)) $("#sheet").value = sheet;
+
+  const alpha = Number(q.get("alpha"));
+  if (alpha >= 0.02 && alpha <= 0.30) {
+    $("#alpha").value = alpha;
+    $("#alpha").dispatchEvent(new Event("input"));
+  }
+
+  /* ?n_boot=2000 setzt die publizierte Genauigkeit. Ohne das rechnet die Konsole
+     mit 400 Replikaten, und die Schranken weichen in der zweiten Nachkommastelle
+     von results/frontier.csv ab (+6,69 pp statt +6,65 pp) — richtig gerechnet,
+     aber nicht die Zahl, die im Bericht steht. */
+  const nb = Number(q.get("n_boot"));
+  if (boot.n_boot && (nb === boot.n_boot.interactive || nb === boot.n_boot.published)) {
+    hit("#nboot button", String(nb));
+  }
+
+  const lane = q.get("lane");
+  if (lane === "claude" || lane === "gpt") hit("#lane button", lane + "-Lane");
+
+  const example = q.get("example");
+  if (example) {
+    const cfg = EXAMPLES.find(([name]) => name.toLowerCase().includes(example.toLowerCase()));
+    if (cfg) applyExample(cfg[1], false);
+  }
+
+  const task = q.get("task");
+  if (task) $("#task").value = task;
+}
+
+/* =========================================================================
+   Start
+   ========================================================================= */
+(async function init() {
+  try {
+    const boot = await (await fetch("/api/bootstrap")).json();
+    if (boot.error) throw new Error(boot.error);
+    S.boot = boot;
+
+    buildFrontierControls(boot);
+    buildDemoControls(boot);
+    renderLegend();
+    applyQuery(boot);
+
+    const cv = $("#caveats");
+    for (const c of boot.caveats) cv.appendChild(el("li", null, c));
+
+    $("#run-frontier").onclick = runFrontier;
+    $("#run-route").onclick = runRoute;
+
+    await runFrontier();
+    await runRoute();
+  } catch (e) {
+    $("#chart").innerHTML = '<p class="err" style="padding:40px 20px">' +
+      "Konnte die Pipeline nicht laden: " + e.message +
+      '<br><span class="dim">Läuft der Server? <code>make console</code></span></p>';
+  }
+})();
+</script>
+</body>
+</html>

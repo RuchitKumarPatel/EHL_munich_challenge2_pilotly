@@ -16,6 +16,14 @@ WHAT THIS CHECKS
     3. No file the repo tracks -- or would track, i.e. untracked and not
        gitignored -- matches an `X-Amz-Signature` pattern. Presigned S3 URLs
        are the classic way a credential escapes through a pasted log line.
+    4. No tracked file carries a concrete redaction serial that is not on a
+       short, justified allowlist. The serial does not have to be attached with
+       an underscore -- see RepoSourceCarriesNoExportContent, and
+       ConcretePlaceholderShapes, which tests the pattern rather than the repo.
+    5. No tracked file carries an opaque-looking identifier that also occurs in
+       the export. This is the shape-free check: checks 1 and 4 both match a
+       KNOWN placeholder shape, and a raw un-redacted vendor id has no shape.
+       See RepoCarriesNoOpaqueExportToken.
 
 WHY THE PII_ RULE IS NOT COSMETIC
     PII_ tokens are renumbered PER REQUEST. `PII_URL_3` in one line and
@@ -27,8 +35,17 @@ WHAT IT WRITES
     Nothing. It reads results/, the export and the repo's own source files, and
     prints only counts and file paths -- never the matched text.
 
+HOW THE PUSH GATE RUNS IT
+    `python -m tests.test_data_safety`, never `python -m unittest`. The gate
+    runner at the bottom prints a RECEIPT saying how many files were enumerated
+    and how many tests ran, because `unittest` exits 0 when everything skips and
+    the gate used to read that as "this branch is clean". See STRICT, RECEIPT
+    and ADR-015.
+
 RUNTIME
-    ~10 s, dominated by the shingle scan over the largest results/ file.
+    ~13 s: the shingle scan over the largest results/ file, plus one streamed
+    pass over the export for the opaque-token check. A per-ref scan is ~4.6 s --
+    only the REF_AWARE classes run there.
 """
 
 from __future__ import annotations
@@ -37,11 +54,70 @@ import json
 import os
 import re
 import subprocess
+import sys
 import unittest
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RESULTS = os.path.join(REPO_ROOT, "results")
-EXPORT = os.path.join(REPO_ROOT, "export")
+#: Overridable only so a test can point the export-backed checks at a directory
+#: that is deliberately empty and watch them go RED instead of skipping. Nothing
+#: in the pipeline sets it.
+EXPORT = os.environ.get("DATA_SAFETY_EXPORT_DIR") or os.path.join(REPO_ROOT, "export")
+
+# `python tests/test_data_safety.py` -- the invocation this file's own __main__
+# guard invites -- puts tests/ on sys.path and NOT the repo root, so `router` is
+# unimportable and this suite reaches a different verdict than `python -m`
+# does. Two invocations of one file may not disagree about whether the repo is
+# safe to push, so the path is repaired here rather than in the guard: an
+# import that only resolves under one runner is the bug, not the runner.
+# See tests/test_data_safety_invocation.py, which asserts the two agree.
+if REPO_ROOT not in sys.path:
+    sys.path.insert(0, REPO_ROOT)
+
+#: When set to a git ref, the two repo-file checks read that ref's tree instead
+#: of the working tree. The loop's push gate uses this to scan each branch it is
+#: about to push: it used to scan whatever happened to be checked out and then
+#: push every branch, so a branch an earlier turn moved off went out unscanned.
+#: The generated-artifact and export-shingle checks are unaffected -- those are
+#: working-tree concerns and neither directory is tracked.
+SCAN_REF = os.environ.get("DATA_SAFETY_SCAN_REF", "").strip()
+
+#: The ref goes onto a git command line, so it is validated before it gets there.
+#: `git ls-tree -r --name-only -z $SCAN_REF` and `git cat-file -s $SCAN_REF:$path`
+#: had no separator of any kind. An option-shaped value makes both exit 129, the
+#: enumeration returns nothing, every content check raises SkipTest, and the
+#: module exits 0 having read no files -- which the push gate reads as "clean".
+#: Refusing at import instead means such a value is RED, loudly, before any scan
+#: is attributed to it. See backlog i0023 and i0022.
+if SCAN_REF and (SCAN_REF.startswith("-") or any(c.isspace() for c in SCAN_REF)):
+    raise ValueError(
+        "DATA_SAFETY_SCAN_REF is option-shaped or contains whitespace; refusing "
+        "to scan rather than reporting a tree nobody enumerated as clean")
+
+#: STRICT means "the push gate is asking". A detector that cannot run is then a
+#: RED answer, never a skipped one.
+#:
+#: WHY THIS EXISTS. `unittest` exits 0 when every test skips, and the gate read
+#: only that exit code. So `DATA_SAFETY_SCAN_REF=refs/heads/no-such-branch`
+#: printed `OK (skipped=6)` and the branch was pronounced clean having
+#: enumerated zero files -- and then pushed. Any git error reached the same
+#: place: a dropped object, a ref deleted between enumeration and scan, a name
+#: git refuses to parse. The same shape sat in the opaque-token detector, which
+#: skipped outright when `export/` was absent, so on a machine without the
+#: export the headline raw-identifier check was inert and green.
+#:
+#: An environmental excuse ("git is unavailable", "the export is not here") is
+#: plausible on a developer laptop and is never plausible for a ref the gate
+#: just enumerated from `for-each-ref`. Under STRICT those raise.
+STRICT = bool(SCAN_REF) or os.environ.get("DATA_SAFETY_STRICT", "").strip() == "1"
+
+#: Set by `_repo_files` so the gate receipt can report how many files the scan
+#: actually looked at. `files=0` and a green exit code is the fail-open above.
+ENUMERATED = {"n": 0}
+
+
+class ScanCannotRun(RuntimeError):
+    """A detector could not run. Under STRICT this is RED, not a skip."""
 
 PII_RE = re.compile(r"PII_[A-Z][A-Z0-9_]*")
 ENTITY_RE = re.compile(r"<ENTITY_[^>]*>")
@@ -56,6 +132,21 @@ PII_ALLOWED_FILE = "jobkey.jsonl"
 SHINGLE = 64
 MAX_SHINGLES = 1200
 OUTPUT_TYPES = ("function_call_output", "custom_tool_call_output")
+
+
+def _require_export():
+    """RED under STRICT when the export is not readable; a skip otherwise.
+
+    The export is the ground truth both content checks compare against. Without
+    it they answer "no leak found" for the same reason an unplugged smoke alarm
+    is silent, and the push gate cannot tell those two apart from the outside.
+    """
+    if os.path.isdir(EXPORT) and any(os.scandir(EXPORT)):
+        return
+    msg = "export/ is not present at %s" % _rel(EXPORT)
+    if STRICT:
+        raise ScanCannotRun(msg + "; the export-backed checks cannot run")
+    raise unittest.SkipTest(msg)
 
 
 def _results_files():
@@ -78,6 +169,40 @@ def _text(path):
 def _rel(path):
     """Repo-relative path, for readable failure messages."""
     return os.path.relpath(path, REPO_ROOT)
+
+
+def _repo_blob(rel, max_bytes):
+    """Text of one repo file, from the working tree or from SCAN_REF's tree.
+
+    Returns None for anything that is not a readable regular file, or that is
+    larger than max_bytes -- a size guard, not a carve-out: the only files that
+    hit it are the inlined figure payloads, which are base64 of our own PNGs.
+    """
+    if SCAN_REF:
+        spec = "%s:%s" % (SCAN_REF, rel)
+        size = subprocess.run(["git", "cat-file", "-s", "--end-of-options", spec],
+                              cwd=REPO_ROOT,
+                              capture_output=True)
+        if size.returncode != 0:
+            return None            # a submodule, a symlink target, or a gone path
+        try:
+            if int(size.stdout.strip()) > max_bytes:
+                return None
+        except ValueError:
+            return None
+        blob = subprocess.run(["git", "cat-file", "blob", "--end-of-options", spec],
+                              cwd=REPO_ROOT,
+                              capture_output=True)
+        if blob.returncode != 0:
+            return None
+        return blob.stdout.decode("latin-1")
+    path = os.path.join(REPO_ROOT, rel)
+    if not os.path.isfile(path) or os.path.getsize(path) > max_bytes:
+        return None
+    try:
+        return _text(path)
+    except OSError:
+        return None
 
 
 class ResultsCarryNoPlaceholders(unittest.TestCase):
@@ -139,10 +264,11 @@ class ResultsCarryNoRawToolOutput(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        if not os.path.isdir(EXPORT):
-            raise unittest.SkipTest("export/ is not present")
+        _require_export()
         cls.files = _results_files()
         if not cls.files:
+            # Unlike a missing export this is not an inert detector: nothing has
+            # been generated, so there is nothing that could carry export text.
             raise unittest.SkipTest("results/ is empty; run `python -m router.cli all`")
         cls.shingles = cls._shingles()
 
@@ -199,17 +325,45 @@ class RepoCarriesNoPresignedSignature(unittest.TestCase):
 
     @staticmethod
     def _repo_files():
-        """Tracked files plus untracked-and-not-ignored ones (read-only git calls)."""
+        """Tracked files plus untracked-and-not-ignored ones (read-only git calls).
+
+        Under SCAN_REF this is the ref's tree instead. There is no untracked half
+        there and that is correct: an unpushed working-tree file cannot reach the
+        remote through a ref, and the working-tree scan still covers it.
+
+        Under STRICT a git failure raises `ScanCannotRun` instead of returning
+        None, and so does an empty listing. Returning None made every content
+        check skip, and a suite in which everything skips exits 0 -- which the
+        push gate read as "this branch is clean". An empty listing is the same
+        fail-open reached by a different route: a ref that resolves to an empty
+        tree has nothing to scan and must not be mistaken for a ref with nothing
+        wrong in it.
+        """
         paths = []
-        for args in (["git", "ls-files", "-z"],
-                     ["git", "ls-files", "--others", "--exclude-standard", "-z"]):
+        if SCAN_REF:
+            listings = [["git", "ls-tree", "-r", "--name-only", "-z", SCAN_REF, "--"]]
+        else:
+            listings = [["git", "ls-files", "-z"],
+                        ["git", "ls-files", "--others", "--exclude-standard", "-z"]]
+        for args in listings:
             try:
                 raw = subprocess.run(args, cwd=REPO_ROOT, capture_output=True,
                                      check=True).stdout
-            except (OSError, subprocess.CalledProcessError):
+            except (OSError, subprocess.CalledProcessError) as exc:
+                if STRICT:
+                    raise ScanCannotRun(
+                        "cannot enumerate repo files for %s: %s"
+                        % (SCAN_REF or "the working tree", exc))
+                ENUMERATED["n"] = 0
                 return None
             paths.extend(n.decode("utf-8", "replace") for n in raw.split(b"\0") if n)
-        return sorted(set(paths))
+        paths = sorted(set(paths))
+        if STRICT and not paths:
+            raise ScanCannotRun(
+                "enumerated 0 files for %s; refusing to call that clean"
+                % (SCAN_REF or "the working tree"))
+        ENUMERATED["n"] = len(paths)
+        return paths
 
     def test_git_listing_is_available(self):
         if self.paths is None:
@@ -221,16 +375,14 @@ class RepoCarriesNoPresignedSignature(unittest.TestCase):
             raise unittest.SkipTest("git is unavailable; cannot enumerate repo files")
         offenders = []
         for rel in self.paths:
-            path = os.path.join(REPO_ROOT, rel)
-            if not os.path.isfile(path) or os.path.getsize(path) > 64 * 1024 * 1024:
-                continue
-            try:
-                blob = _text(path)
-            except OSError:
+            blob = _repo_blob(rel, 64 * 1024 * 1024)
+            if blob is None:
                 continue
             if AMZ_SIG_RE.search(blob):
                 # This file names the pattern in its own source; that is not a hit.
-                if os.path.abspath(path) == os.path.abspath(__file__):
+                # Compared by repo-relative path so it holds under SCAN_REF too,
+                # where the scanned file has no path on disk at all.
+                if rel == _rel(os.path.abspath(__file__)):
                     continue
                 offenders.append(rel)
         self.assertEqual(offenders, [],
@@ -261,11 +413,40 @@ class RepoSourceCarriesNoExportContent(unittest.TestCase):
     is the one trigger value router/features.py had to classify). What it may not
     do is carry an unexplained concrete placeholder, which would mean a slice of
     a real trajectory was pasted in.
+
+    THE SERIAL IS NOT ALWAYS ATTACHED WITH AN UNDERSCORE
+        The first version of this pattern required a trailing `_<digits>`, so a
+        serial written in any other shorthand walked straight past it.
+        loop/JOURNAL.md carried exactly that -- the prefix, a slash, then the
+        digits -- from commit 5082319 until c05e078, surviving the turn-1
+        cleanup that docs/DATA-SAFETY-DEBT.md records as complete. The value it
+        encoded occurs in the export in the thousands.
+
+        So the pattern now accepts up to two non-alphanumeric characters between
+        the prefix and the serial, and NORMALISES what it finds back to the
+        underscore form before comparing it to DOCUMENTARY. One allowlist entry
+        therefore covers every spelling of the same placeholder, which is what
+        keeps the allowlist inside its cap of 8.
     """
 
-    #: A concrete placeholder is one ending in a per-request serial number.
-    CONCRETE_PII = re.compile(r"PII_[A-Z]+(?:_[A-Z]+)*_\d+")
-    CONCRETE_ENTITY = re.compile(r"<ENTITY_[A-Z]+(?:_[A-Z]+)*_\d+>")
+    #: A concrete placeholder is a prefix, then up to two non-alphanumeric
+    #: characters, then a per-request serial. The separator class excludes
+    #: WHITESPACE on purpose, and that exclusion was measured rather than
+    #: guessed: with whitespace allowed, this very file failed itself, because a
+    #: docstring sentence of the form "<prefix>, 3 of them" reads as a serial.
+    #: A serial is written ATTACHED to its prefix -- `_12`, `/12`, `-12`, `:12`,
+    #: `.12` -- so requiring attachment costs no real coverage and drops the
+    #: whole prose false-positive class.
+    SERIAL_SEP = r"[^\sA-Za-z0-9]{0,2}"
+    CONCRETE_PII = re.compile(r"(PII_[A-Z]+(?:_[A-Z]+)*)" + SERIAL_SEP + r"(\d+)")
+    CONCRETE_ENTITY = re.compile(
+        r"(<ENTITY_[A-Z]+(?:_[A-Z]+)*)" + SERIAL_SEP + r"(\d+)>?")
+
+    @staticmethod
+    def _normalise(match, closing=""):
+        """`prefix<any separator>serial` -> the canonical `prefix_serial` form."""
+        prefix, serial = match
+        return "%s_%s%s" % (prefix, serial, closing)
 
     #: Each allowed token, with the reason it is documentary rather than data.
     DOCUMENTARY = {
@@ -288,15 +469,11 @@ class RepoSourceCarriesNoExportContent(unittest.TestCase):
             raise unittest.SkipTest("git is unavailable; cannot enumerate repo files")
         offenders = {}
         for rel in self.paths:
-            path = os.path.join(REPO_ROOT, rel)
-            if not os.path.isfile(path) or os.path.getsize(path) > 16 * 1024 * 1024:
+            blob = _repo_blob(rel, 16 * 1024 * 1024)
+            if blob is None:
                 continue
-            try:
-                blob = _text(path)
-            except OSError:
-                continue
-            hits = set(self.CONCRETE_PII.findall(blob))
-            hits |= set(self.CONCRETE_ENTITY.findall(blob))
+            hits = {self._normalise(m) for m in self.CONCRETE_PII.findall(blob)}
+            hits |= {self._normalise(m, ">") for m in self.CONCRETE_ENTITY.findall(blob)}
             unexplained = sorted(hits - set(self.DOCUMENTARY))
             if unexplained:
                 offenders[rel] = unexplained
@@ -317,5 +494,474 @@ class RepoSourceCarriesNoExportContent(unittest.TestCase):
                                "%s is allowlisted without a real justification" % token)
 
 
+
+class ConcretePlaceholderShapes(unittest.TestCase):
+    """Unit tests for the placeholder PATTERN, not for the repo's contents.
+
+    RepoSourceCarriesNoExportContent above is a corpus test: it passes when the
+    repo happens to be clean, which it also does when the pattern is broken.
+    That is how the slash shorthand survived a cleanup that was recorded as
+    complete. These tests exercise the pattern directly, so a regression in it
+    fails here whatever the repo looks like.
+
+    Every probe is assembled at runtime from a prefix and a serial that are
+    written separately in this file, so the file itself never carries a concrete
+    placeholder for the corpus test above to find. The prefix is invented: it
+    occurs 0 times in the export (measured), which is what makes it a probe
+    rather than a sample.
+    """
+
+    CLS = RepoSourceCarriesNoExportContent
+    PROBE = "PII_PROBE"
+    ENTITY_PROBE = "<ENTITY_PROBE"
+
+    #: The shorthands a human actually writes. The slash is the one that reached
+    #: main in commit 5082319 and was removed in c05e078.
+    ATTACHED_SEPARATORS = ("_", "/", "-", ":", ".", "#", "/-", "::")
+
+    def _pii(self, text):
+        return {self.CLS._normalise(m) for m in self.CLS.CONCRETE_PII.findall(text)}
+
+    def _entity(self, text):
+        return {self.CLS._normalise(m, ">")
+                for m in self.CLS.CONCRETE_ENTITY.findall(text)}
+
+    def test_the_underscore_form_still_matches(self):
+        self.assertEqual(self._pii("see %s%s here" % (self.PROBE, "_7")),
+                         {self.PROBE + "_7"})
+
+    def test_a_serial_attached_by_any_separator_is_detected(self):
+        """The i0011 regression: `_<digits>` was not the only spelling in use."""
+        missed = [sep for sep in self.ATTACHED_SEPARATORS
+                  if not self._pii("prefix %s%s%s tail" % (self.PROBE, sep, "7"))]
+        self.assertEqual(missed, [],
+                         "these separators hide a serial from the detector: %s" % missed)
+
+    def test_normalisation_collapses_every_separator_to_one_token(self):
+        """One DOCUMENTARY entry must cover every spelling, or the cap of 8 breaks."""
+        found = set()
+        for sep in self.ATTACHED_SEPARATORS:
+            found |= self._pii("%s%s%s" % (self.PROBE, sep, "7"))
+        self.assertEqual(found, {self.PROBE + "_7"},
+                         "separators normalise to more than one token: %s"
+                         % sorted(len(t) for t in found))
+
+    def test_a_pattern_name_without_a_serial_is_not_a_placeholder(self):
+        """`PII_URL_N` names the shape; it carries no per-request value."""
+        self.assertEqual(self._pii("%s_N and %s_M are renumbered per request"
+                                   % (self.PROBE, self.PROBE)), set())
+
+    def test_a_number_separated_by_whitespace_is_prose_not_a_serial(self):
+        """Measured carve-out: without it this file failed on its own docstring."""
+        for text in ("%s, 3 of them", "%s appears 306 times", "%s and 12 others"):
+            self.assertEqual(self._pii(text % self.PROBE), set(), text)
+
+    def test_the_entity_shorthand_matches_and_keeps_its_bracket(self):
+        for sep in ("_", "/"):
+            self.assertEqual(self._entity("%s%s%s>" % (self.ENTITY_PROBE, sep, "7")),
+                             {self.ENTITY_PROBE + "_7>"})
+
+    def test_every_documentary_entry_is_written_in_normalised_form(self):
+        """An allowlist entry the detector cannot reproduce would never match."""
+        for token in self.CLS.DOCUMENTARY:
+            found = self._entity(token) if token.startswith("<") else self._pii(token)
+            self.assertEqual(found, {token},
+                             "%s does not round-trip through the detector" % token)
+
+
+class RepoCarriesNoOpaqueExportToken(unittest.TestCase):
+    """No opaque-looking identifier in a repo file may occur in the export.
+
+    WHY THIS EXISTS
+        Every other placeholder check in this file matches a SHAPE -- `PII_...`
+        or `<ENTITY_...>`. A raw, un-redacted identifier copied straight out of
+        a trajectory has no shape to match, and that is exactly how three of
+        them reached a shared repository on night one. This test needs no shape.
+        It pulls every opaque-looking token out of every repo file and asks the
+        export whether it knows it. A token the export knows came from the
+        export.
+
+    WHAT COUNTS AS OPAQUE -- TWO WINDOWS, AND WHY NOT ONE
+        LONG: a maximal run of [A-Za-z0-9_-], 16 to 64 characters, mixing
+        letters and digits. That is the shape of a key, a uuid or a session id.
+
+        COMPACT: a maximal run of [A-Za-z0-9] with NO separator, 8 to 15
+        characters, mixing letters and digits, minus two structural rejections
+        below. The three raw identifiers this class cites are 11 characters, so
+        the long window alone matched none of them and the control was inert
+        (backlog i0018). `OpaqueDetectorCatchesTheIncidentItWasWrittenFor`
+        replays that commit and is the test that keeps this honest.
+
+        Simply lowering the long window to 8 was measured and REJECTED: it takes
+        the repo from 27 candidates to 88 and 18 of those occur in the export by
+        coincidence -- model ids, feature-column names, dates -- so the corpus
+        test would be permanently and uninformatively red. Every one of the 18
+        carries a `-` or a `_`. Excluding separators below 16 costs nothing real
+        (a raw identifier is not hyphenated) and drops the false positives to 1.
+
+        The two structural rejections in the compact window, both measured:
+        `word1024` / `1024word` is a name with a size on it, not an identifier;
+        and `<digits>x<digits>` is a pixel dimension -- `1920x1080` appears in
+        loop/JOURNAL.md and in the export by pure coincidence, and it was the
+        last false positive left. Both are shape rules, so neither can grow the
+        way an allowlist can.
+
+        Maximal matters: `data:...;base64,` payloads are stripped first, because
+        presentation.html inlines a 577 KB matplotlib PNG whose `+` and `/`
+        bytes otherwise shatter it into ~9000 fragments of exactly this shape.
+        With the strip and both windows in place the whole repo yields 36
+        candidates over 126 files, 0 of which the export knows -- small enough
+        to scan the 101 MB export against directly, in ~3 s either way.
+
+    WHAT IS STRUCTURALLY EXEMPT
+        The arm identifiers in router.pricing.OBSERVED_ARMS. They are the
+        study's unit of analysis, they are pinned in docs/CONTRACTS.md, and they
+        are already anonymized per AGENTS.md -- one of them is 17 characters and
+        occurs in the export by construction. This tracks the arm table rather
+        than being an allowlist, so it cannot silently grow.
+
+    WHAT IT PRINTS ON FAILURE
+        The repo path, how many tokens matched, and a MASKED shape (letters ->
+        a/A, digits -> #). Never the token. The token is the leak.
+
+    RUNTIME
+        ~3 s: one streamed pass over the export per 8 MB chunk.
+    """
+
+    OPAQUE_RE = re.compile(r"(?<![A-Za-z0-9_-])[A-Za-z0-9_-]{16,64}(?![A-Za-z0-9_-])")
+    COMPACT_RE = re.compile(r"(?<![A-Za-z0-9_-])[A-Za-z0-9]{8,15}(?![A-Za-z0-9_-])")
+    #: A name with a size attached, not an identifier.
+    WORD_THEN_DIGITS_RE = re.compile(r"\A[A-Za-z]+[0-9]+\Z|\A[0-9]+[A-Za-z]+\Z")
+    #: A pixel dimension. The one false positive the compact window otherwise has.
+    DIMENSION_RE = re.compile(r"\A[0-9]+[xX][0-9]+\Z")
+    DATA_URI_RE = re.compile(r"data:[A-Za-z0-9.+/-]*;base64,[A-Za-z0-9+/=\s]+")
+    CHUNK = 8 * 1024 * 1024
+    MAX_FILE = 16 * 1024 * 1024
+
+    @classmethod
+    def setUpClass(cls):
+        _require_export()
+        cls.paths = RepoCarriesNoPresignedSignature._repo_files()
+        if cls.paths is None:
+            raise unittest.SkipTest("git is unavailable; cannot enumerate repo files")
+        cls.exempt = cls._exempt_arm_ids()
+        cls.candidates = cls._candidates(cls.paths, cls.exempt)
+        cls.known = cls._which_occur_in_export(set(cls.candidates))
+
+    @staticmethod
+    def _exempt_arm_ids():
+        """The observed arm identifiers, read from the pricing table, not copied.
+
+        The import is deliberately UNGUARDED. Every arm id occurs in the export
+        by construction, so this table is a correctness input to the check, not
+        an optimisation: swallowing an ImportError here does not degrade the
+        detector, it reports nine legitimate identifiers as leaks. A leak
+        detector that is wrong about what a leak is has no verdict to give.
+        """
+        from router.pricing import OBSERVED_ARMS
+
+        return frozenset(OBSERVED_ARMS)
+
+    @staticmethod
+    def _mixed(token):
+        return (any(c.isdigit() for c in token)
+                and any(c.isalpha() for c in token))
+
+    @classmethod
+    def _opaque(cls, blob):
+        blob = cls.DATA_URI_RE.sub(" ", blob)
+        found = {t for t in cls.OPAQUE_RE.findall(blob) if cls._mixed(t)}
+        found |= {t for t in cls.COMPACT_RE.findall(blob)
+                  if cls._mixed(t)
+                  and not cls.WORD_THEN_DIGITS_RE.match(t)
+                  and not cls.DIMENSION_RE.match(t)}
+        return found
+
+    @classmethod
+    def _candidates(cls, paths, exempt):
+        """token -> the repo files carrying it.
+
+        Reads through `_repo_blob`, so that under DATA_SAFETY_SCAN_REF this
+        reads the REF's blobs. Opening the working-tree path instead would
+        silently skip any file the ref has and the checkout does not, and would
+        read the wrong bytes for every file they share -- which is the whole
+        point of scanning a branch you are not standing on.
+        """
+        out = {}
+        for rel in paths:
+            blob = _repo_blob(rel, cls.MAX_FILE)
+            if blob is None:
+                continue
+            for token in cls._opaque(blob) - exempt:
+                out.setdefault(token, set()).add(rel)
+        return out
+
+    @classmethod
+    def _which_occur_in_export(cls, tokens):
+        """Stream every export file once; return the subset the export contains."""
+        found = set()
+        pending = set(tokens)
+        if not pending:
+            return found
+        overlap = 64
+        for root, _dirs, names in os.walk(EXPORT):
+            for name in sorted(names):
+                with open(os.path.join(root, name), "rb") as fh:
+                    tail = ""
+                    while pending:
+                        raw = fh.read(cls.CHUNK)
+                        if not raw:
+                            break
+                        window = tail + raw.decode("latin-1")
+                        for token in list(pending):
+                            if token in window:
+                                found.add(token)
+                                pending.discard(token)
+                        tail = window[-overlap:]
+        return found
+
+    @staticmethod
+    def _mask(token):
+        """Shape only: letters collapse to a/A, digits to #. Safe to print."""
+        return "".join("#" if c.isdigit() else "a" if c.islower()
+                       else "A" if c.isupper() else c for c in token)
+
+    def test_the_candidate_set_is_non_trivial(self):
+        """A detector that finds nothing to check is not evidence of anything."""
+        self.assertGreaterEqual(
+            len(self.candidates), 5,
+            "only %d opaque tokens extracted from %d repo files; the extractor is "
+            "probably broken, not the repo clean" % (len(self.candidates), len(self.paths)))
+
+    def test_the_export_scan_finds_a_token_that_is_really_there(self):
+        """Negative control. Without it a scanner that always returns nothing passes."""
+        from router.io import iter_lines
+
+        probe = None
+        for _idx, req in iter_lines():
+            for token in sorted(self._opaque(json.dumps(req))):
+                if token not in self.exempt:
+                    probe = token
+                    break
+            if probe:
+                break
+        if probe is None:
+            raise unittest.SkipTest("no opaque token found in the export to probe with")
+        self.assertEqual(self._which_occur_in_export({probe}), {probe},
+                         "the export scan missed a token taken straight out of the "
+                         "export (shape %s)" % self._mask(probe))
+
+    def test_no_repo_file_carries_a_token_the_export_knows(self):
+        offenders = {}
+        for token in sorted(self.known):
+            for rel in sorted(self.candidates[token]):
+                offenders.setdefault(rel, []).append(self._mask(token))
+        self.assertEqual(
+            offenders, {},
+            "opaque tokens in repo files that also occur in the export -- shapes "
+            "only, never the value. Each is a raw identifier copied out of a "
+            "trajectory unless it is an arm id, and arm ids are already exempt. "
+            "Offenders: %s" % offenders)
+
+
+class OpaqueDetectorCatchesTheIncidentItWasWrittenFor(unittest.TestCase):
+    """The detector above must catch the tokens whose removal it cites.
+
+    WHY THIS EXISTS
+        `RepoCarriesNoOpaqueExportToken` is a corpus test: it is green when the
+        repo is clean and equally green when its extractor matches nothing. Its
+        docstring cites the three raw identifiers removed in commit af4e78b as
+        the incident it prevents -- and it matched none of them, because they
+        are 11 characters long and its window started at 16. A control that
+        cannot detect its own stated class defeats itself (backlog i0018).
+
+        So this class replays the incident. It reads both sides of that commit
+        out of history, takes every token the commit removed, keeps the ones the
+        export actually knows, and asserts each is caught by one of this file's
+        detectors. No token is written into this file: the fixture is the
+        commit itself, and failures print masked shapes only.
+
+    WHICH DETECTOR CATCHES WHICH
+        Two of the five removed tokens are placeholder-shaped and belong to
+        `RepoSourceCarriesNoExportContent`; three are raw identifiers with no
+        shape at all and belong to the opaque detector. The assertion is on the
+        UNION of the two, because between them they are the whole control.
+    """
+
+    FIXTURE_COMMIT = "af4e78b"
+    FIXTURE_PATH = "docs/POSTMORTEM-textclf.md"
+
+    #: Deliberately wider than either detector: this is the ground truth they
+    #: are measured against, not a third detector.
+    WIDE_RE = re.compile(r"(?<![A-Za-z0-9_-])[A-Za-z0-9_-]{6,64}(?![A-Za-z0-9_-])")
+
+    @classmethod
+    def setUpClass(cls):
+        # Through the shared helper, never a bare isdir: an export directory
+        # that exists and is EMPTY passes isdir and then answers "the corpus
+        # knows none of these tokens", which reads here as the fixture having
+        # stopped reproducing the incident. `_require_export` is the one place
+        # that knows an unreadable corpus is a skip outside the gate and RED
+        # under STRICT, and this control is worthless without that distinction.
+        _require_export()
+        before = cls._at(cls.FIXTURE_COMMIT + "^")
+        after = cls._at(cls.FIXTURE_COMMIT)
+        if before is None or after is None:
+            raise unittest.SkipTest("commit %s is not reachable in this checkout"
+                                    % cls.FIXTURE_COMMIT)
+        removed = cls._wide(before) - cls._wide(after)
+        cls.known = RepoCarriesNoOpaqueExportToken._which_occur_in_export(removed)
+
+    @classmethod
+    def _at(cls, rev):
+        try:
+            out = subprocess.run(["git", "show", "%s:%s" % (rev, cls.FIXTURE_PATH)],
+                                 cwd=REPO_ROOT, capture_output=True, check=True)
+        except (OSError, subprocess.CalledProcessError):
+            return None
+        return out.stdout.decode("utf-8", "replace")
+
+    @classmethod
+    def _wide(cls, blob):
+        return {t for t in cls.WIDE_RE.findall(blob)
+                if any(c.isdigit() for c in t) and any(c.isalpha() for c in t)}
+
+    @staticmethod
+    def _caught_by_a_detector(token):
+        """True if any detector in this file matches the token."""
+        placeholder = RepoSourceCarriesNoExportContent
+        if placeholder.CONCRETE_PII.findall(token):
+            return True
+        if placeholder.CONCRETE_ENTITY.findall(token):
+            return True
+        return token in RepoCarriesNoOpaqueExportToken._opaque(token)
+
+    def test_the_fixture_commit_really_removed_corpus_content(self):
+        """Control. Without it the assertion below is vacuous on an empty set."""
+        self.assertGreaterEqual(
+            len(self.known), 3,
+            "commit %s removed only %d token(s) the corpus knows; the fixture no "
+            "longer reproduces the incident and this class proves nothing"
+            % (self.FIXTURE_COMMIT, len(self.known)))
+
+    def test_every_removed_token_the_corpus_knows_is_caught(self):
+        missed = sorted(RepoCarriesNoOpaqueExportToken._mask(t)
+                        for t in self.known if not self._caught_by_a_detector(t))
+        self.assertEqual(
+            missed, [],
+            "these tokens were removed from %s BECAUSE they are corpus content, "
+            "and no detector in this file matches them -- shapes only, never the "
+            "value: %s" % (self.FIXTURE_PATH, missed))
+
+
+class CompactOpaqueTokenShapes(unittest.TestCase):
+    """Unit tests for the compact half of the opaque pattern, not for the repo.
+
+    Same reasoning as `ConcretePlaceholderShapes`: a corpus test is green when
+    the extractor is blind, so the extractor needs tests of its own. Every probe
+    here is synthesised. The two that are real strings -- a screen resolution
+    and an embedding width -- are structural shapes, not corpus content.
+    """
+
+    CLS = RepoCarriesNoOpaqueExportToken
+
+    def _opaque(self, text):
+        return self.CLS._opaque(text)
+
+    def test_an_eleven_character_identifier_is_caught(self):
+        """The i0018 regression: the 16-char floor missed exactly this length."""
+        for probe in ("Q7A4B2CD3EF", "R28XYZ4LMN5", "T591M8KK7PQ"):
+            self.assertEqual(self._opaque("id %s here" % probe), {probe}, probe)
+
+    def test_the_floor_is_eight_characters(self):
+        self.assertEqual(self._opaque("A1B2C3D"), set())          # 7 -- below
+        self.assertEqual(self._opaque("A1B2C3D4"), {"A1B2C3D4"})  # 8 -- at
+
+    def test_the_long_window_still_takes_separator_bearing_tokens(self):
+        probe = "sess-4f2a-11ee-9c0b-2b7d3a"
+        self.assertEqual(self._opaque("path/%s/x" % probe), {probe})
+
+    def test_a_compact_token_carrying_a_separator_is_not_compact(self):
+        """8..15 is alnum-only on purpose. Allowing `-` and `_` down there costs
+        18 false positives against the corpus (measured on this tree): model
+        ids, field names and dates that collide by coincidence. The
+        separator-bearing window therefore still starts at 16.
+        """
+        self.assertEqual(self._opaque("claude-5-a1"), set())
+
+    def test_a_word_with_an_attached_serial_is_a_name_not_an_identifier(self):
+        for probe in ("modernbert1024", "embeddings768", "1024channels"):
+            self.assertEqual(self._opaque(probe), set(), probe)
+
+    def test_the_rejection_is_only_for_a_single_word_digit_boundary(self):
+        """`L1024tokens` alternates and stays a candidate. The rejection above is
+        deliberately narrow: widening it to any letter/digit mixture would throw
+        away the very shape the compact window exists to catch.
+        """
+        self.assertEqual(self._opaque("L1024tokens"), {"L1024tokens"})
+
+    def test_a_pixel_dimension_is_not_an_identifier(self):
+        """Measured carve-out: `1920x1080` sits in loop/JOURNAL.md AND in the
+        corpus, by pure coincidence. Narrow, documented, and it cannot grow.
+        """
+        self.assertEqual(self._opaque("rendered at 1920x1080 ok"), set())
+
+    def test_a_base64_payload_still_contributes_nothing(self):
+        blob = "data:image/png;base64," + ("iVBORw0KGgoAAAANSUhEUg" * 40)
+        self.assertEqual(self._opaque(blob), set())
+
+    def test_letters_only_and_digits_only_are_never_opaque(self):
+        self.assertEqual(self._opaque("abcdefghijkl 123456789012"), set())
+
+#: Under SCAN_REF only these run. The other two classes are working-tree
+#: concerns -- generated artifacts and untracked files -- and neither can travel
+#: through a ref; running them once per branch re-walked the export for nothing.
+REF_AWARE = ("RepoCarriesNoPresignedSignature",
+             "RepoSourceCarriesNoExportContent",
+             "ConcretePlaceholderShapes",
+             "CompactOpaqueTokenShapes",
+             "RepoCarriesNoOpaqueExportToken")
+
+#: `OpaqueDetectorCatchesTheIncidentItWasWrittenFor` is deliberately NOT in the
+#: list above. It is a control on the detector itself: its fixture is a commit
+#: in history, so its verdict is identical for every ref, and it walks the
+#: 101 MB export once at setUpClass. Running it per branch would repeat that
+#: walk ~11x a turn for an answer that cannot change between refs. It runs in
+#: the working-tree scan, which is the scan that has to be right about it.
+
+#: The receipt. `loop/push_gate.sh` refuses a branch when this line is absent,
+#: when `files` is 0, when `ran` is 0, or when `failed` is not 0 -- so a scan
+#: that skipped everything can no longer read as a clean branch. Only the gate
+#: runner below prints it; `python -m unittest` never does, and the gate does
+#: not accept that invocation.
+RECEIPT = "DATA-SAFETY-RECEIPT ref=%s files=%d ran=%d skipped=%d failed=%d"
+
+
+def run_as_gate(stream=None):
+    """Run the suite and print a machine-readable receipt. Returns an exit code.
+
+    `python -m unittest` exits 0 when every test skips, which is how a branch
+    that enumerated zero files was reported clean. The receipt closes that: the
+    caller checks what the scan actually did, not only whether it complained.
+    """
+    import sys
+
+    stream = stream or sys.stderr
+    loader = unittest.TestLoader()
+    module = sys.modules[__name__]
+    if SCAN_REF:
+        suite = unittest.TestSuite(
+            loader.loadTestsFromTestCase(getattr(module, name)) for name in REF_AWARE)
+    else:
+        suite = loader.loadTestsFromModule(module)
+    result = unittest.TextTestRunner(stream=stream, verbosity=2).run(suite)
+    failed = len(result.failures) + len(result.errors)
+    print(RECEIPT % (SCAN_REF or "worktree", ENUMERATED["n"], result.testsRun,
+                     len(result.skipped), failed), flush=True)
+    return 0 if result.wasSuccessful() else 1
+
+
 if __name__ == "__main__":
-    unittest.main(verbosity=2)
+    import sys
+
+    sys.exit(run_as_gate())

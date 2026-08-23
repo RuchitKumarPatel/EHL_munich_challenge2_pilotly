@@ -161,6 +161,7 @@ def load_artifacts() -> dict:
         raise FileNotFoundError(
             f"{manifest_path} is missing; run `python -m router.features` first"
         )
+    tooling_path = RESULTS_DIR / "tooling.json"
     return {
         "recon": recon,
         "labels": labels,
@@ -168,6 +169,10 @@ def load_artifacts() -> dict:
         "routes": routes,
         "estimates": json.loads(est_path.read_text(encoding="utf-8")),
         "manifest": json.loads(manifest_path.read_text(encoding="utf-8")),
+        # optional: router.tooling is not on the critical path for the frontier,
+        # so a report can still be built without it.
+        "tooling": (json.loads(tooling_path.read_text(encoding="utf-8"))
+                    if tooling_path.exists() else None),
     }
 
 
@@ -361,6 +366,67 @@ def cost_claims(claims: dict, art: dict) -> None:
     _put(claims, "cost.cache_write.multiplier", _costs.DEFAULTS["cache_write_mult"])
     for rho, mult in _costs.rho_sweep(recon).items():
         _put(claims, f"cost.effective_multiplier.rho_{rho:.2f}", mult)
+
+
+def tooling_claims(claims: dict, art: dict) -> None:
+    """Section 6b: the tool block as a routing surface (results/tooling.json).
+
+    Silently absent if router.tooling has not run — every other section still
+    builds. Only the headline of each intervention is lifted; the full sweep
+    stays in tooling.json.
+
+    NOTE ON WHAT MAY BE QUOTED. `truncate` is the only intervention whose
+    saving is both leak-free and failure-free: a token cap is a constant, not a
+    set fitted on this corpus, and no tool is removed. `omit.history` is
+    leak-free but carries a real miss rate. Everything keyed `.upper_bound` is
+    fitted on the same 1000 trajectories it is scored on and must never be
+    quoted as an achievable saving.
+    """
+    art_tooling = art.get("tooling")
+    if not art_tooling:
+        return
+    base = art_tooling["baseline"]
+    _put(claims, "tooling.baseline.cost_units", base["cost_units"])
+    _put(claims, "tooling.baseline.gross_tok", base["gross_tok"])
+    _put(claims, "tooling.oracle.cost_delta", art_tooling["oracle"]["cost_delta"])
+
+    waste = art_tooling["waste"]
+    unused = sum(r["wasted_tok_turns"] for r in waste)
+    _put(claims, "tooling.waste.tok_turns", unused)
+    _put(claims, "tooling.waste.share_of_gross", unused / base["gross_tok"])
+    worst = waste[0]
+    _put(claims, "tooling.waste.worst_tool.name", worst["tool"])
+    _put(claims, "tooling.waste.worst_tool.size_tok", worst["size_tok"])
+    _put(claims, "tooling.waste.worst_tool.use_rate", worst["use_rate"])
+    _put(claims, "tooling.waste.worst_tool.share_of_gross",
+         worst["wasted_tok_turns"] / base["gross_tok"])
+    _put(claims, "tooling.tools_never_called.n",
+         sum(1 for r in waste if r["called_in"] == 0))
+    _put(claims, "tooling.undefined_calls.n", len(art_tooling["undefined_calls"]))
+
+    def _row(rows, needle):
+        for row in rows:
+            if needle in row["policy"]:
+                return row
+        return None
+
+    history = _row(art_tooling["omit"], "prior-run history")
+    if history:
+        _put(claims, "tooling.omit.history.cost_delta", history["cost_delta"])
+        _put(claims, "tooling.omit.history.miss_rate", history["miss_rate"])
+
+    for row in art_tooling["truncate"]:
+        cap = row["cap_tok"]
+        _put(claims, f"tooling.truncate.cap{cap}.cost_delta", row["cost_delta"])
+        _put(claims, f"tooling.truncate.cap{cap}.miss_rate", row["miss_rate"])
+
+    best_defer = min(art_tooling["defer"], key=lambda r: r["cost_delta"])
+    _put(claims, "tooling.defer.best.cost_delta.upper_bound", best_defer["cost_delta"])
+    _put(claims, "tooling.defer.best.core_rate", best_defer["core_rate"])
+    best_combined = min(art_tooling["combined"], key=lambda r: r["cost_delta"])
+    _put(claims, "tooling.combined.best.cost_delta.upper_bound",
+         best_combined["cost_delta"])
+    _put(claims, "tooling.combined.best.cap_tok", best_combined["cap_tok"])
 
 
 def model_claims(claims: dict, art: dict, n_permutations: int, seed: int,
@@ -611,7 +677,11 @@ def frontier_claims(claims: dict, front: dict) -> None:
                  p["ci_hi_pp"])
     _put(claims, "frontier.gated_router.hull_bound_at_same_spend_pp",
          front["gated_hull_bound_pp"])
-    _put(claims, "frontier.gated_router.gap_above_hull_pp",
+    # NOT a bound on the gap. Both legs are one-sided UPPER bounds, so their
+    # difference bounds the true difference in neither direction. The key is
+    # named for what it arithmetically is, so no prose can quote it as "the
+    # gap" without the name contradicting the sentence. See ADR-014.
+    _put(claims, "frontier.gated_router.upper_bound_minus_hull_upper_bound_pp",
          front["gated_gap_vs_hull_pp"])
     _put(claims, "frontier.gated_router.beats_hull", front["router_beats_hull"])
     _put(claims, "frontier.off_lane.runs_not_drawn", front["off_lane"]["n_runs"])
@@ -646,6 +716,7 @@ def build_claims(n_permutations: int = 1000, seed: int = 0,
     jobkey_claims(claims, art)
     feature_claims(claims, art)
     cost_claims(claims, art)
+    tooling_claims(claims, art)
     model_claims(claims, art, n_permutations, seed, fit=fit)
     policy_claims(claims, art)
     ope_claims(claims, art)
@@ -837,14 +908,31 @@ def render_numbers_md(claims: dict) -> str:
       f"{q('refusal.mde_best_powered_arm_pair.pp', '.1f')} pp on the "
       f"best-powered arm pair.")
     a("")
-    a(f"5. **The router does not yet beat randomising between two arms.** At the "
-      f"same spend, the single-arm mixture frontier reaches "
-      f"{q('frontier.gated_router.hull_bound_at_same_spend_pp', '+.2f')} pp while "
-      f"the gated router reaches "
-      f"{q('frontier.policy.gated_router.upper_bound_pp', '+.2f')} pp — a gap of "
-      f"{q('frontier.gated_router.gap_above_hull_pp', '+.2f')} pp the wrong way. "
-      f"On these bounds the routing logic has not earned its complexity, and the "
-      f"honest recommendation is the cheaper single arm, not the router.")
+    a(f"5. **We routed too little to have earned a frontier comparison.** At the "
+      f"same spend the single-arm mixture frontier sits at "
+      f"{q('frontier.gated_router.hull_bound_at_same_spend_pp', '+.2f')} pp and "
+      f"the gated router at "
+      f"{q('frontier.policy.gated_router.upper_bound_pp', '+.2f')} pp. **Do not "
+      f"subtract those.** Both are ONE-SIDED UPPER bounds "
+      f"(`router.ope.non_inferiority_bound` returns `hi` only), so their "
+      f"difference bounds the true difference in neither direction and no "
+      f"directional verdict follows from it. The key holding it is named "
+      f"`frontier.gated_router.upper_bound_minus_hull_upper_bound_pp` for exactly "
+      f"that reason. What CAN be said is arithmetic and stronger: the identified "
+      f"delta is a spend-weighted average of per-run differences in [0, 1] over "
+      f"the switched runs only, so its magnitude cannot exceed the share of spend "
+      f"the policy moves — and this router moves "
+      f"{q('ope.routed.switched.spend_share', '.1%')} of est. spend "
+      f"({q('policy.rerouted.n', ',')} of {q('policy.routable.n', ',')} routable "
+      f"trajectories). No policy at this tau can reach a hull sitting at "
+      f"{q('frontier.gated_router.hull_bound_at_same_spend_pp', '+.2f')} pp, "
+      f"however well it routes. The finding is about tau, not about the routing "
+      f"rule. Note also what the comparator is: at this spend the hull is an "
+      f"interpolation, i.e. a RANDOMISATION between "
+      f"`{q('frontier.hull.vertex1.arm')}` and `{q('frontier.hull.vertex2.arm')}` "
+      f"— not one cheap arm, and the second of those prices at "
+      f"${q('frontier.policy.all_to_claude-opus-5.usd', ',.2f')}, the top of the "
+      f"chart's cost axis.")
     a("")
     a("## Two arithmetic corrections to earlier drafts")
     a("")
