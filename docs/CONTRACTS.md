@@ -61,8 +61,9 @@ That contract is enforced in two places, and between them they cover everything 
 * the git-tracked user-facing artifacts at CHECK time — `python -m router.verify` reads
   `README.md`, `router/console.html`, `presentation.html`, `templates/presentation.html` and
   `site/index.html`, pulls every numeral out of their prose, and exits 1 on any that no claim
-  stands behind (0 clean, 2 when `claims.json` has not been built). See ADR-009 for what it can
-  and cannot prove.
+  stands behind (0 clean, 2 when `claims.json` has not been built, and 2 when one of those five
+  files is absent — a surface it cannot read is BLOCKED, never skipped into a PASS, see ADR-018).
+  See ADR-009 for what it can and cannot prove.
 
 ---
 

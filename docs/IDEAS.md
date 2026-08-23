@@ -32,14 +32,6 @@ Turn: **12** · spend so far: **$47.05** · last turn type: **implement**
 
 - turn 8: Ordinary parser hardening, goes through evaluate: all three are latent and the gate is green today. If the evaluate turn accepts, success = tests/test_verify.py gains an unclosed-fence markdown case and a >-inside-attribute HTML case, and the percent lookahead scans to the next non-space rather than slicing 2 characters.
 
-## accepted (1)
-
-### i0019 — router.verify reports PASS when a user-facing artifact is missing
-
-*code* — router/verify.py:151 on idea/integrate-turn7. Report.ok is 'not self.orphans' and ignores Report.missing, so an artifact listed in ARTIFACTS that is absent from the tree is printed as 'absent from this tree, skipped' and the run still exits 0 with a PASS line. Reproduced this turn: deleting README.md and presentation.html from a scratch copy of the branch yields 'PASS - 5 numeral(s) across 3 artifact(s)', exit 0. presentation.html is the judged deck, it carries 36 of the 41 bound numerals, and it was created at the repo root only at turn 5 -- any rename or relocation by a later deck turn silently disables the prose gate for the whole deck. Found by the turn-8 review turn.
-
-- turn 8: Defeats a control rather than being a style opinion -- same class as i0012, so it skips evaluate. Fix: make Report.ok require an empty missing list as well, i.e. 'not self.orphans and not self.missing', and print the missing artifacts in the FAIL block rather than as a quiet aside. If an artifact is legitimately optional it must say so explicitly: add a fourth field to the ARTIFACTS tuples (required True/False) rather than letting absence pass silently. templates/presentation.html is the only plausible optional one. Success = tests/test_verify.py gains a case that copies the tree, removes presentation.html, and asserts main() returns non-zero naming the missing path; existing 140 tests stay green.
-
 ## rejected (1)
 
 ### i0002 — Text classifier on the first user message as a routing signal · `text-classifier-finetune`
@@ -48,7 +40,7 @@ Turn: **12** · spend so far: **$47.05** · last turn type: **implement**
 
 - turn 0: Already executed by a parallel session on branch text-classifier-finetune (commit 24e7469): ModernBERT fine-tune, frozen-encoder probe, arm-interaction head. Outcome NEGATIVE and adopted nothing — ADR-008 plus docs/POSTMORTEM-textclf.md. corr(Delta_hat, real stratum gap) = +0.042 against a design-based sonnet-opus contrast of +6.8pp stratum-adjusted. Do NOT rebuild this. See i0004 for landing the write-up.
 
-## implemented (5)
+## implemented (6)
 
 ### i0018 — The new opaque-token detector cannot catch the incident it was written for · `idea/opaque-token-floor`
 
@@ -72,6 +64,25 @@ GATE: make test 151 OK (main is 140), make all green (301 claims), router.gates 
 KNOWN LIMIT, RECORDED: the compact window still requires both a letter and a digit, so a purely alphabetic identifier is invisible. Nothing in this corpus has that shape.
 
 FOR THE MERGE TURN: this branch and idea/scan-fails-closed (i0022/i0024/i0026, turn 11) both edit tests/test_data_safety.py, docs/DECISIONS.md and docs/DATA-SAFETY-DEBT.md. ADR numbers were coordinated by reading that branch -- it is ADR-015, this is ADR-016, no renumbering needed. The test-file changes are in different classes (that branch: _repo_files / setUpClass skip-vs-fail; this branch: OPAQUE_RE and _opaque plus two new classes at the end of the file), so expect a textual conflict only in the docs. i0026's loop/README.md sentence was deliberately NOT touched here -- it belongs to that branch's commit, but after both land it must also name this new limit instead of the 16-char floor.
+
+### i0019 — router.verify reports PASS when a user-facing artifact is missing · `idea/verify-missing-artifact`
+
+*code* — router/verify.py:151 on idea/integrate-turn7. Report.ok is 'not self.orphans' and ignores Report.missing, so an artifact listed in ARTIFACTS that is absent from the tree is printed as 'absent from this tree, skipped' and the run still exits 0 with a PASS line. Reproduced this turn: deleting README.md and presentation.html from a scratch copy of the branch yields 'PASS - 5 numeral(s) across 3 artifact(s)', exit 0. presentation.html is the judged deck, it carries 36 of the 41 bound numerals, and it was created at the repo root only at turn 5 -- any rename or relocation by a later deck turn silently disables the prose gate for the whole deck. Found by the turn-8 review turn.
+
+- turn 8: Defeats a control rather than being a style opinion -- same class as i0012, so it skips evaluate. Fix: make Report.ok require an empty missing list as well, i.e. 'not self.orphans and not self.missing', and print the missing artifacts in the FAIL block rather than as a quiet aside. If an artifact is legitimately optional it must say so explicitly: add a fourth field to the ARTIFACTS tuples (required True/False) rather than letting absence pass silently. templates/presentation.html is the only plausible optional one. Success = tests/test_verify.py gains a case that copies the tree, removes presentation.html, and asserts main() returns non-zero naming the missing path; existing 140 tests stay green.
+- turn 11: IMPLEMENTED on idea/verify-missing-artifact (9edb564). Both halves of the turn-8 brief taken.
+
+THE REPRO, RE-RUN NOT ASSUMED. Before: a scratch copy with presentation.html and README.md deleted printed 'PASS - 5 numeral(s) across 3 artifact(s)' and exited 0. After: both paths are named 'REQUIRED and absent from this tree', a BLOCKED block explains that a narrowed gate reads exactly like a clean one, exit is 2. On the shipped tree nothing moved -- still PASS on 44 numerals across 5 artifacts, exit 0.
+
+WHAT WAS BUILT. ARTIFACTS gained the fourth field the brief asked for, 'required'. All five entries are True, because all five are git-tracked and shipped -- so the field is not decoration: absence is now a decision recorded in that tuple rather than a file the scan quietly stopped covering. Report.missing means required-and-absent and makes Report.ok false; a separate Report.skipped exists for a genuinely optional artifact and is empty today, and ADR-018 says nothing may be added to it without an entry explaining why that file stopped being shipped.
+
+EXIT CODE IS 2, NOT 1, and that was a judgement call worth stating. The brief only required non-zero. 2 mirrors the absent claims table: when the run cannot read its whole declared surface, its orphan list is partial, so no verdict about the prose follows from it. It does NOT swallow findings -- one test drops README.md while perturbing a numeral in presentation.html and asserts the run exits 2 and still prints the orphan.
+
+TESTS, 7 new, all watched to fail first (4 failures + 2 unpack errors on the pre-fix module). The brief's named case is test_the_entry_point_exits_non_zero_and_names_the_missing_path. Beyond it: the whole surface deleted still blocks rather than printing a verdict over nothing; every required artifact must exist in the shipped tree; no artifact may be quietly downgraded to optional (the failure mode is social -- marking the artifact optional is the cheapest way to silence a red gate); and every declared artifact must be git-tracked.
+
+GATE, all four: make test 147 OK (main is 140), make all green (301 claims), router.gates GREEN 4 pass / 2 warn / 0 fail, router.verify PASS 44 numerals exit 0. No headline number introduced or changed, so no number-verifier; router/features.py and every join untouched, so no leak-hunter.
+
+FOR THE MERGE TURN. ADR numbering was checked against the three sibling turn-12 branches before writing: idea/scan-fails-closed took 015, idea/opaque-token-floor 016, idea/ref-name-injection 017, so this branch is ADR-018 and no renumbering is needed. This branch touches router/verify.py, tests/test_verify.py, docs/DECISIONS.md and docs/CONTRACTS.md -- no sibling branch touches either of the first two, so the only expected conflicts are the DECISIONS.md append and the usual loop bookkeeping.
 
 ### i0022 — The per-ref data-safety scan fails open: any git error becomes 'branch clean' · `idea/scan-fails-closed`
 

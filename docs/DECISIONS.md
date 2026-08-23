@@ -646,3 +646,39 @@ refusal would prove only that the throwaway repo was broken. Mutation-tested: ne
 character class fails 8 of the 21, and pushing by name instead of by scanned sha fails 1.
 `make test` 150 OK (main is 140), `make all` green (301 claims), `router.gates` GREEN
 4 pass / 2 warn / 0 fail, `router.verify` PASS on 44 numerals.
+---
+
+## ADR-018 — An artifact the prose gate cannot read is BLOCKED, never skipped into a PASS
+
+**Status:** Accepted
+
+**Decision.** `router/verify.ARTIFACTS` carries a fourth field, `required`. A required artifact
+that is not on disk goes to `Report.missing`, `Report.ok` is false whenever that list is
+non-empty, and `python -m router.verify` exits **2 — BLOCKED**, the same code an absent claims
+table returns. All five declared artifacts are git-tracked and shipped, so all five are
+`required=True`; `tests/test_verify.py` pins that, so marking one optional to quiet a red gate
+breaks a test rather than passing silently.
+
+**Why.** The gate's surface is a declaration, and a declaration that narrows itself when a file
+moves is worse than no declaration: a narrowed gate prints the same green banner as a complete
+one. `presentation.html` carries 36 of the 44 bound numerals and only arrived at the repo root at
+turn 5, so any later deck turn that renamed or relocated it would have switched the prose contract
+off for the entire deck while `make verify` still read PASS.
+
+**The measurement.** On the tree as shipped, `python -m router.verify` binds **44 numerals across
+5 artifacts** and exits 0. Deleting `presentation.html` and `README.md` from a scratch copy
+previously printed `PASS - 5 numeral(s) across 3 artifact(s)` and exited **0**; it now names both
+paths as `REQUIRED and absent from this tree`, prints the BLOCKED block, and exits **2**. That
+before-state is the turn-8 review's reproduction, re-run here rather than taken from the note.
+
+**Two things the exit contract had to get right.** BLOCKED dominates a partial orphan list: when
+the run cannot read its whole surface, the orphans it did find are an incomplete answer, so the
+code is 2 and not 1. But it does not swallow them — `print_report` emits the orphan block as well,
+and a test drops one artifact while perturbing a numeral in another and asserts both appear.
+
+**Consequence.** `router.verify` now distinguishes three outcomes rather than two: clean (0), a
+number that does not trace (1), and a surface it could not read (2). The `skipped` list exists for
+a genuinely optional artifact and is empty today; nothing may be added to it without an entry
+here saying why that file stopped being shipped.
+
+---
