@@ -30,6 +30,17 @@ shape of both problems instead of quoting either -- no identifier and no serial 
 `24e7469` is still on `origin` and still carries the original paragraph, so item 1 stays open here
 until `i0006` is executed by a human.
 
+**Detection, turn 12.** Until now nothing would have caught this class a second time. The
+opaque-token detector added for `i0005` needed a token of 16 characters and these are 11, so it
+matched none of the five tokens commit `af4e78b` removed — measured, not argued. It now uses a
+second, compact window (8–15 characters, no separator, two shape rejections) and catches all
+three raw identifiers; the two placeholder serials were already covered by the shape detector. See
+ADR-016 for why the single-window floor could not simply be lowered. This incident is now a
+regression fixture rather than a docstring citation:
+`tests.test_data_safety.OpaqueDetectorCatchesTheIncidentItWasWrittenFor` reads both sides of
+`af4e78b` out of history at test time and fails if any token that commit removed stops being
+detected. It writes no token into any tracked file and prints masked shapes only.
+
 ### 2. Loop bookkeeping — placeholder serials
 
 **Where.** Commit `5082319` on `main`, which introduced them; removed again in `8257642`. Both
