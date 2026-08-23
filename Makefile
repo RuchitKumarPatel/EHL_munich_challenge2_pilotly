@@ -15,7 +15,7 @@ RESULTS := results
 .DEFAULT_GOAL := all
 
 .PHONY: all recon labels jobkey features costs model policy gates strata ope \
-        family figs report console console-check console-e2e test demo clean help dirs \
+        family figs sweep report deck console console-check console-e2e test demo clean help dirs \
         tooling verify
 
 ## all: run the full pipeline in dependency order
@@ -28,7 +28,7 @@ RESULTS := results
 #     and `report` refuses to run without the "family_contrast" section, so both
 #     are part of `all`, not optional extras.
 all: dirs recon labels jobkey features costs tooling model policy gates strata ope \
-     family figs report
+     family figs sweep report deck
 	@echo ""
 	@echo "pipeline complete -> $(RESULTS)/"
 
@@ -104,9 +104,29 @@ family: dirs
 figs: dirs
 	$(PY) -m router.figs
 
+## sweep: the conformal knob swept -> results/sweep.json + sweep.png
+#
+# Re-runs the whole gate chain at eleven alphas and re-prices each result through
+# figs.policy_point, so a swept point and a plotted point are the same
+# computation. Runs AFTER figs (it recomputes the hull the chart draws) and
+# BEFORE report (report refuses without results/sweep.json).
+sweep: dirs
+	$(PY) -m router.sweep
+
 ## report: metrics.json + claims.json + NUMBERS.md
 report: dirs
 	$(PY) -m router.report
+
+## deck: regenerate presentation.html from claims.json -> presentation.html
+#
+# Runs LAST: every numeral on a slide is looked up by claims key through
+# report._Q, so the deck cannot be built before claims.json exists, and it
+# cannot outlive a claim that was renamed. Both figures are inlined as base64
+# because results/ is gitignored and a relative src breaks for teammates.
+deck: dirs
+	$(PY) -m router.deck
+	@echo ""
+	$(PY) -m router.verify
 
 # ------------------------------------------------------------- stage 5: console
 # The console is not a pipeline stage: it writes no artifact and `all` does not

@@ -122,6 +122,10 @@ NOT_A_CLAIM: dict[str, str] = {
     r"Gate\s*[1-9]\b":
         "ordinals naming which link of the five-gate chain is meant; the chain "
         "length is a design choice, the ordinal is a label",
+    r"ADR[-‒-―]\d{3}":
+        "a citation of a decision record in docs/DECISIONS.md. The three digits "
+        "are the ADR's identity, not a measurement -- and matched by value they "
+        "would bind to whatever claim happens to equal 14",
     r"\d+\s*(?:%[-\s]?(?:Obergrenze|upper bound|confidence|CI\b)"
     r"|(?:st|nd|rd|th)\s+percentile)":
         "the level every interval and permutation cut-off in this project is "

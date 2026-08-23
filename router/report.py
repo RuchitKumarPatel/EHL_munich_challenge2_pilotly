@@ -688,6 +688,60 @@ def frontier_claims(claims: dict, front: dict) -> None:
     _put(claims, "frontier.off_lane.gross_share", front["off_lane"]["gross_share"])
 
 
+def sweep_claims(claims: dict) -> None:
+    """Section 13: the conformal sweep — what alpha buys, and what it does not.
+
+    Reads results/sweep.json rather than recomputing: the sweep re-runs the whole
+    gate chain eleven times and takes about a minute, and `router.sweep` has
+    already pinned its own acceptance numbers. Refusing when the file is absent
+    is deliberate — a missing sweep must not silently drop the keys that the deck
+    quotes, because a dropped key is exactly what `router.verify` would then read
+    as prose with no claim behind it.
+    """
+    path = RESULTS_DIR / "sweep.json"
+    if not path.exists():
+        raise FileNotFoundError(
+            f"{path} is missing — run `make sweep` before `make report`. "
+            "The deck quotes sweep keys and they cannot be regenerated here."
+        )
+    data = json.loads(path.read_text(encoding="utf-8"))
+
+    _put(claims, "sweep.alpha.shipped", data["shipped"]["alpha"])
+    _put(claims, "sweep.alpha.n_points", len(data["points"]))
+    _put(claims, "sweep.alpha.min", min(data["alphas"]))
+    _put(claims, "sweep.alpha.max", max(data["alphas"]))
+
+    # The whole finding, as two booleans and the alpha where the excuse expires.
+    _put(claims, "sweep.any_alpha_beats_hull", data["any_alpha_beats_hull"])
+    _put(claims, "sweep.ceiling_binds_everywhere", data["ceiling_binds_everywhere"])
+    unb = data.get("ceiling_unbinds_at")
+    if unb is not None:
+        _put(claims, "sweep.ceiling_unbinds.alpha", unb["alpha"])
+        _put(claims, "sweep.ceiling_unbinds.moved_spend_pp", unb["delta_ceiling_pp"])
+        _put(claims, "sweep.ceiling_unbinds.hull_distance_pp", abs(unb["hull_bound_pp"]))
+        _put(claims, "sweep.ceiling_unbinds.usd", unb["cost_usd"])
+        _put(claims, "sweep.ceiling_unbinds.switched.n", unb["n_switched"])
+
+    # The cheapest and the tightest ends of the grid, so prose can say what the
+    # knob spans without quoting a point that is not in claims.json.
+    cheapest = min(data["points"], key=lambda p: p["cost_usd"])
+    _put(claims, "sweep.cheapest.alpha", cheapest["alpha"])
+    _put(claims, "sweep.cheapest.usd", cheapest["cost_usd"])
+    _put(claims, "sweep.cheapest.bound_pp", cheapest["bound_pp"])
+    _put(claims, "sweep.cheapest.switched.n", cheapest["n_switched"])
+    _put(claims, "sweep.cheapest.moved_spend_pp", cheapest["delta_ceiling_pp"])
+
+    # Bound degradation as the gate opens: the reason loosening tau is not a fix.
+    _put(claims, "sweep.bound_pp.at_shipped", data["shipped"]["bound_pp"])
+    _put(claims, "sweep.bound_pp.at_cheapest", cheapest["bound_pp"])
+
+    # The knob is coarse, and that is a routing insight rather than a nuisance:
+    # split conformal picks the floor(alpha*(n_pos+1))-th calibration score, so
+    # whole ranges of alpha collapse onto one threshold and one route set.
+    distinct = len({p["n_switched"] for p in data["points"]})
+    _put(claims, "sweep.distinct_route_sets.n", distinct)
+
+
 def refusal_claims(claims: dict) -> None:
     """Section 12: the numbers behind what we refuse to claim."""
     _put(claims, "refusal.friction_point_estimate.reported", False)
@@ -722,6 +776,7 @@ def build_claims(n_permutations: int = 1000, seed: int = 0,
     ope_claims(claims, art)
     family_claims(claims, art)
     frontier_claims(claims, front)
+    sweep_claims(claims)
     refusal_claims(claims)
     return dict(sorted(claims.items()))
 

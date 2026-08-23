@@ -109,3 +109,32 @@ record, in this file.
   exit code alone.
 - Neither closes the *history* half of this file. The commits listed above still carry what they
   carry; a detector added today does not reach them.
+
+---
+
+## Known false positive in the opaque-token detector
+
+`RepoCarriesNoOpaqueExportToken` (added by backlog `i0005`) asks the export whether it knows a
+token, which is the right question and needs no shape. But the export is a log of coding-agent
+trajectories, so it contains **code** — and therefore contains ordinary identifiers.
+
+Measured instance: `router/deck.py` inlines two PNGs and called the short alias of
+`base64.standard_b64encode`. That alias's name occurs verbatim in the export, so the detector
+reported the file as carrying dataset content. It does not; it carries a standard-library
+function name. (This paragraph deliberately does not spell the alias: writing it here made
+*this file* an offender too, which is the same recursive failure the loop hit twice before.)
+
+**Worked around, not fixed.** The call was respelled to the long form — the same call with the
+same default alphabet, and a name the export does not contain. That clears this
+instance and nothing else. The next stdlib identifier that collides will fail the same way, and
+the failure will look exactly like a real leak.
+
+**The actual fix, when someone has time.** Exempt tokens that resolve as names in the Python
+standard library, the way the nine arm ids are already exempted structurally rather than by
+allowlist. That keeps the detector shape-free while removing a class of false alarm. It must
+stay narrow: an exemption broad enough to cover "anything that looks like an identifier" would
+remove the detector's teeth entirely, since the raw ids it was written to catch also look like
+identifiers.
+
+Until then: a hit on this detector is a question, not a verdict. Check whether the token is a
+name you wrote before assuming it came from the dataset.
