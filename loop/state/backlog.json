@@ -383,13 +383,17 @@
     "title": "router/textclf hardcodes a dead /tmp session-uuid scratch path in all four modules",
     "kind": "code",
     "why": "router/textclf/{encode,probe,evalpool,finetune}.py each set SP to an absolute /tmp/claude-1000/<session-uuid>/scratchpad path from the session that produced the negative result. That directory is gone, so the postmortem's measurements cannot be reproduced by anyone reading it -- which is most of the value of landing a negative result on main. Also loads emb_modernbert_L1024.npy from there. Found by the turn-8 review turn.",
-    "status": "proposed",
-    "branch": null,
+    "status": "implemented",
+    "branch": "idea/textclf-scratch-paths",
     "created_turn": 8,
     "notes": [
       {
         "turn": 8,
         "text": "Turn-8 review: also flagged by the code-review skill and the python-reviewer. router/textclf/probe.py does 'from evalpool import *' and resolves it against that dead /tmp path, so the README's documented reproduce command works only while that directory happens to survive. If i0018 lowers the opaque-token floor to 8 characters, the session uuid in these paths becomes a candidate -- it is not export content (verified: it is a Claude Code session id), so either fix the paths or let the detector's export check clear it."
+      },
+      {
+        "turn": 11,
+        "text": "IMPLEMENTED on idea/textclf-scratch-paths (f6b3635), ADR-021. Branched from main.\n\nTHE TURN-8 NOTE'S PREMISE WAS WRONG AND THAT MATTERED. It says the scratch directory 'is gone'. It is NOT -- it still exists on this laptop, and that makes the bug worse rather than milder: with the path hardcoded, running encode.py HERE does not fail, it silently starts a 51-minute encode against a directory the reader never chose. Everywhere else it dies on an uninterpretable path. Measured, not argued -- the first version of the subprocess test hung for the full 2-minute timeout because the module really did start working.\n\nSCOPE WAS BIGGER THAN 'four SP constants'. The real closure is evalpool -> contrast -> oof -> mech -> harness: four modules (~310 lines) that are NOT in the repo at all, plus X.npy, Xtext.npy, cols.json, flat.json, costmat.json. So probe.py could never have run for anyone, path constant or no. harness.py bottoms out in this repo's own router.ope/strata/pricing, so the estimand IS the repo's; the scratch modules are plumbing.\n\nDELIBERATELY NOT VENDORED. Those five data files are export-derived, so committing them breaks rule 1, and this repo has already shipped export content to a shared remote twice. The README names every one of them instead, and tests/test_textclf_repro.py extracts the paths FROM THE SOURCE each run and fails when the README drifts -- enforced, not asserted. Vendoring the four CODE modules (no export content in them) would close the gap fully and is filed separately.\n\nA SECOND DEFECT FOUND WHILE FIXING THIS, not in the original finding: probe.py and finetune.py did sys.path.insert(0, SP) and sys.path.insert(0, SP + '/tc'), and that scratch tc/ holds STALE COPIES of these same file names. Diffed them: tc/finetune.py there is the PRE-FIX degenerate revision -- the arm as 16 of 784 input dims, the trap README.md ends on. An insert at position 0 makes it shadow the shipped module, so the documented reproduce command was one import away from the exact model the postmortem exists to warn about. Now appended, never inserted, and pinned by a test.\n\nTHE MEASUREMENT THAT DECIDES IT. evalpool.py and probe.py were RUN end to end under the new resolution against the real scratch directory. probe.py reproduces the postmortem's headline to every quoted digit: frozen ModernBERT-base spend R2 0.367 / capture@100 78.2% against 0.566 / 92.2% for hashed word 1-2-grams (docs/POSTMORTEM-textclf.md:136-137). So the negative result went from documented-but-unrunnable to re-derived. That window closes at the next reboot of this laptop.\n\nFAIL FAST IS PART OF THE FIX: TEXTCLF_SCRATCH resolves BEFORE the transformers import in every entry point, and a test pins the line order, because a 10 s model import in front of a config error is how a reader gives up.\n\nALSO PINNED: i0004's acceptance criterion ('no torch reachable from make all'), which turns 7e, 8 and 9 each re-verified BY HAND. TextclfStaysOutOfThePipeline now asserts it.\n\nMUTATION CONTROL, all four killed and restored green: reinstating a hardcoded absolute path (2 failures), append->insert (1), dropping one README row (1), moving the scratch resolution below the transformers import (1).\n\nGATE: make test 149 OK (main is 140), make all green (301 claims, AUPRC unchanged at 0.4159785566844733), router.gates GREEN 4 pass / 2 warn / 0 fail, router.verify PASS 44 numerals across 5 artifacts, tests.test_data_safety 21 OK. No claims key touched and no headline number moved, so no number-verifier; no feature or join touched, so no leak-hunter.\n\nFOR THE MERGE TURN. (a) ADR numbering was checked against idea/integrate-turn12 first: that branch holds 015..020, this is 021, no collision. (b) This branch touches NO file that idea/integrate-turn12 touches except docs/DECISIONS.md (append-only, take both) and loop/state -- router/textclf/* and tests/test_textclf_repro.py are untouched there. (c) Merge order does not matter."
       }
     ]
   },
@@ -488,6 +492,21 @@
       {
         "turn": 8,
         "text": "DATA-SAFETY (documentation half), and it must land in the SAME commit as whichever fix settles i0022 -- the sentence has to describe the control that actually exists at that moment. Fix: restate loop/README.md:86 to say raw identifiers are covered by the opaque-token detector, name its real limits (the length floor of i0018, and the fail-open of i0022 until that is fixed), and drop the 'the review turn greps by hand' instruction once it is no longer the control. Success = a grep for the stale sentence returns nothing and docs/DATA-SAFETY-DEBT.md, loop/README.md and tests/test_data_safety.py's docstrings agree on which classes are detected."
+      }
+    ]
+  },
+  {
+    "id": "i0027",
+    "title": "Vendor the four scratch modules so the textclf negative result reproduces from the repo alone",
+    "kind": "code",
+    "why": "ADR-021 closed the path half of i0020 and named what it did NOT do. router/textclf still reaches contrast.py -> oof.py -> mech.py -> harness.py, four modules of ~310 lines that live only in one /tmp scratch directory and are NOT in the repo. They carry no export content (they are estimator plumbing over router.ope/strata/pricing), so unlike the five .npy/.json data files they COULD be committed. Until they are, docs/POSTMORTEM-textclf.md is reproducible only by whoever still holds that directory -- and it disappears at the next reboot of the one laptop that has it. Success = probe.py runs from a clean checkout plus the export, with the data files still uncommitted and still named in the README, and tests/test_textclf_repro.py's README contract updated to match the smaller scratch surface.",
+    "status": "proposed",
+    "branch": null,
+    "created_turn": 11,
+    "notes": [
+      {
+        "turn": 11,
+        "text": "ID COLLISION, same one turn 14 recorded. This branch is cut from main, whose backlog stops at i0026, so backlog.py add minted i0027 -- but idea/integrate-turn12 ALREADY holds a different i0027 (its integration entry) and a different i0028 (the unclosed-fence escalation). The CLI has no rename and loop/state must not be hand-edited, so: during the union, re-mint THIS entry through backlog.py add and keep the integration branch's i0027 and i0028, exactly as turn 12 resolved the previous instance.\n\nMeasured while filing: the four modules are contrast.py 76, oof.py 89, mech.py 99, harness.py 48 lines. harness.py reads flat.json and costmat.json, which ARE export-derived and must stay out -- so vendoring the code does not by itself make the path runnable from a clean checkout unless those two are regenerable from the repo pipeline. Check that BEFORE accepting: if they are not regenerable, this idea shrinks to 'commit the code, keep the honest limit in the README' and is worth much less."
       }
     ]
   }
