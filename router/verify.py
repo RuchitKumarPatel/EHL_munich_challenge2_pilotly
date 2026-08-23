@@ -25,7 +25,23 @@ WHAT IT DOES NOT DO
     coincidental 0, 1 or 2. Same for fenced code blocks and inline code spans in
     markdown: a shell command is not a claim.
 
-TWO THINGS THE PARSER HAS TO GET RIGHT
+WHAT "PROSE" MEANS, PRECISELY
+    Everything the stripper removes is replaced with blanks, never deleted, so
+    a reported line number still points at the real line. Three rules in there
+    are not obvious and each was a defect first (ADR-020):
+
+      * A tag ends at its `>`, EXCEPT a `>` inside a quoted attribute value.
+        `<[^>]+>` closes on that one and reads the rest of the tag as prose.
+      * A code fence with no closing partner is blanked to end of file, the
+        same fallback the HTML path already had for an unclosed <script>.
+        Because that can also HIDE a numeral written after the bad fence, the
+        gate prints a WARNING naming the line where it stopped reading.
+      * The `%` that licenses the fraction reading is found by scanning to the
+        next non-space, not by slicing a fixed two characters -- but only
+        whitespace may sit between, or the tolerance starts binding numerals
+        that are not shares.
+
+TWO MORE THINGS THE PARSER HAS TO GET RIGHT
     LOCALE. router/console.html is written in GERMAN. "die MDE liegt bei 11,4
     pp" is refusal.mde_best_powered_arm_pair.pp with a decimal comma; a parser
     that assumes the English thousands comma reads 114 and reports a false
@@ -155,6 +171,7 @@ class Report:
     missing: list = field(default_factory=list)
     skipped: list = field(default_factory=list)
     unused_allowlist: list = field(default_factory=list)
+    warnings: list = field(default_factory=list)
 
     @property
     def ok(self) -> bool:
@@ -172,8 +189,15 @@ class Report:
 _COMMENT_RE = re.compile(r"<!--.*?-->", re.S)
 _SCRIPTISH_RE = re.compile(r"<(script|style)\b[^>]*>.*?</\1\s*>", re.S | re.I)
 _OPEN_SCRIPTISH_RE = re.compile(r"<(script|style)\b[^>]*>.*", re.S | re.I)
-_TAG_RE = re.compile(r"<[^>]+>")
+#: A tag runs to its `>`, but a `>` INSIDE a quoted attribute value is not the
+#: end of the tag -- `<[^>]+>` closes there and the rest of the tag is then read
+#: as prose. The three alternatives are disjoint on their first character, so
+#: this stays linear: no ambiguity for the engine to backtrack over.
+_TAG_RE = re.compile(r"""<(?:[^>"']|"[^"]*"|'[^']*')*>""")
 _FENCE_RE = re.compile(r"^```.*?^```", re.S | re.M)
+#: A fence with no closing partner, mirroring `_OPEN_SCRIPTISH_RE` on the HTML
+#: side. Without it a dropped ``` spills a shell command into the scanned prose.
+_OPEN_FENCE_RE = re.compile(r"^```.*", re.S | re.M)
 _INLINE_CODE_RE = re.compile(r"`[^`\n]*`")
 
 
@@ -196,8 +220,26 @@ def prose(text: str, kind: str) -> str:
         return _TAG_RE.sub(_blank, text)
     if kind == "markdown":
         text = _FENCE_RE.sub(_blank, text)
+        text = _OPEN_FENCE_RE.sub(_blank, text)  # an unclosed ``` at EOF
         return _INLINE_CODE_RE.sub(_blank, text)
     raise ValueError("unknown artifact kind %r" % (kind,))
+
+
+def unclosed_fences(text: str, kind: str) -> list:
+    """Line numbers of code fences with no closing partner, 1-indexed.
+
+    Blanking a dangling fence to end of file is the conservative read of a
+    malformed document -- but it can also HIDE a real numeral written after
+    the bad fence, turning a fail into a quiet pass. So the gate says out loud
+    where it stopped reading. HTML has the same shape in `_OPEN_SCRIPTISH_RE`
+    and is not reported, because an unclosed <script> is a browser-visible
+    breakage a reader cannot miss; a dropped ``` still renders.
+    """
+    if kind != "markdown":
+        return []
+    balanced = _FENCE_RE.sub(_blank, text)
+    return [i + 1 for i, line in enumerate(balanced.split("\n"))
+            if line.startswith("```")]
 
 
 def apply_allowlist(text: str) -> tuple[str, set]:
@@ -272,8 +314,11 @@ def scan_artifact(text: str, rel: str, kind: str, locale: str,
         for m in _NUMERAL_RE[locale].finditer(line):
             literal = m.group(0)
             value, decimals = parse_literal(literal, locale)
-            tail = line[m.end():m.end() + 2].lstrip()
-            percent = tail.startswith("%")
+            # Scan to the next non-space, never a fixed slice: two spaces
+            # before the sign used to disable the fraction path silently. Only
+            # WHITESPACE may sit between -- anything else and the tolerance
+            # would start binding numerals that are not shares at all.
+            percent = line[m.end():].lstrip(" \t").startswith("%")
             keys = resolve(value, decimals, numeric, percent)
             if keys:
                 bindings.append(Binding(rel, lineno, literal, value, keys, percent))
@@ -295,6 +340,9 @@ def run(root: str = REPO_ROOT, claims_path: str | None = None) -> Report:
             continue
         with open(path, "r", encoding="utf-8") as fh:
             text = fh.read()
+        for ln in unclosed_fences(text, kind):
+            report.warnings.append(
+                (rel, ln, "unclosed ``` fence -- everything after it was ignored"))
         bindings, orphans, hit = scan_artifact(text, rel, kind, locale, numeric)
         report.bindings.extend(bindings)
         report.orphans.extend(orphans)
@@ -342,6 +390,8 @@ def print_report(report: Report) -> None:
     if not report.orphans and not report.missing:
         print("PASS - %d numeral(s) across %d artifact(s), all accounted for."
               % (len(report.bindings), len(report.scanned)))
+    for rel, ln, why in report.warnings:
+        print("WARNING - %s:%d %s" % (rel, ln, why))
     if report.unused_allowlist:
         print("\nNOTE - NOT_A_CLAIM entries that matched nothing: %s"
               % ", ".join(report.unused_allowlist))
