@@ -2,8 +2,8 @@
 Everything grouped-CV by cluster. Nothing here is fine-tuned; this is the floor the
 fine-tune has to beat."""
 import sys, json, numpy as np
-SP='/tmp/claude-1000/-home-frans-Projekte-EHL-munich-challenge2-pilotly/9b068e6c-8b32-41b5-987d-3924a4317d1b/scratchpad'
-sys.path.insert(0,SP); sys.path.insert(0,f'{SP}/tc')
+from _scratch import scratch_dir, on_path
+SP=scratch_dir(); on_path(SP, f'{SP}/tc')
 from evalpool import *
 
 E   = np.load(f'{SP}/tc/emb_modernbert_L1024.npy').astype(np.float64)

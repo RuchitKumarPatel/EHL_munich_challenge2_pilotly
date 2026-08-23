@@ -22,13 +22,52 @@ the treatment and is unknown at routing time. The friction head is arm-condition
 that is the only way to read Δ̂ = p̂(sonnet) − p̂(logged) off a single forward pass.
 
 ## Reproducing
+
+These four modules READ a scratch directory; they do not build it. Point them at
+one with `TEXTCLF_SCRATCH`, which every module resolves before it imports
+`transformers` and refuses to guess:
+
+```
+export TEXTCLF_SCRATCH=/path/to/scratchpad
+MAXLEN=512 EPOCHS=5 BS=4 LR=3e-5 HEAD_LR=1e-3 SPLIT=0 .venv/bin/python router/textclf/finetune.py
+```
+
+### What that directory has to contain
+
+Everything below is derived from the licensed export, so **none of it is in this
+repository and none of it can be** — see rule 1 in `AGENTS.md`. This list is the
+only record of what the run needed. `tests/test_textclf_repro.py` extracts the
+paths from the source on every run and fails when this section drifts from them.
+
+| path | what it is | who reads it |
+|---|---|---|
+| `models/modernbert-base` | the five weight files fetched below | `encode.py`, `finetune.py` |
+| `X.npy`, `cols.json` | the 35-column tabular feature matrix and its column names | `evalpool.py`, `probe.py` |
+| `Xtext.npy` | hashed n-gram features — the champion `probe.py` has to beat | `probe.py` |
+| `tc/emb_modernbert_L1024.npy` | frozen embeddings, written by `encode.py` | `probe.py` |
+| `contrast.py` | the modelled-both-arms estimand | `evalpool.py` |
+
+`contrast.py` is itself the head of a chain that is **not** in this repo either:
+`contrast.py` → `oof.py` → `mech.py` → `harness.py`, and `harness.py` reads
+`flat.json` and `costmat.json` from the same directory. `harness.py` bottoms out
+in this repo's own `router.ope`, `router.strata` and `router.pricing`, so the
+estimand is the repo's; the four scratch modules are the plumbing that fed it.
+
+**Honest limit:** that plumbing was never brought into the repo, so this path is
+reproducible only by someone who still has the scratch directory. What IS
+reproducible from the repo alone is the result the postmortem turns on — see
+`docs/POSTMORTEM-textclf.md`, which states the measured verdict and its evidence.
+Written outputs (`tc/textlen.json`, `tc/spend_bert.npy`, `tc/spend_hash.npy`,
+`tc/ft_split*_L*.json`) land in the same directory and are not preconditions.
+
+### Weights
+
 Weights are NOT on huggingface.co from this network (`000`); the mirror serves them:
 
 ```
 for f in config.json model.safetensors tokenizer.json tokenizer_config.json special_tokens_map.json; do
-  curl -sL -o "$MODELDIR/$f" "https://hf-mirror.com/answerdotai/ModernBERT-base/resolve/main/$f"
+  curl -sL -o "$TEXTCLF_SCRATCH/models/modernbert-base/$f" "https://hf-mirror.com/answerdotai/ModernBERT-base/resolve/main/$f"
 done
-MAXLEN=512 EPOCHS=5 BS=4 LR=3e-5 HEAD_LR=1e-3 SPLIT=0 .venv/bin/python router/textclf/finetune.py
 ```
 
 `huggingface_hub.snapshot_download` does NOT work even with `HF_ENDPOINT` set: it follows an

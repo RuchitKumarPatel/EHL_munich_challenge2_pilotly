@@ -1,7 +1,7 @@
 """Cron-restricted routing evaluation. Same friction estimand as every earlier run (score2/hi_ct)."""
 import sys, json, numpy as np
-SP='/tmp/claude-1000/-home-frans-Projekte-EHL-munich-challenge2-pilotly/9b068e6c-8b32-41b5-987d-3924a4317d1b/scratchpad'
-sys.path.insert(0,SP)
+from _scratch import scratch_dir, on_path
+SP=scratch_dir(); on_path(SP)
 from contrast import *          # PANEL, ARMS, AI, CAND, C, score2, show2, contrast, boot_contrast, FOLD, ...
 from router import pricing
 
