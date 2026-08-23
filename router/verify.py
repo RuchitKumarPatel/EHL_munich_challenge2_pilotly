@@ -42,12 +42,9 @@ WHAT "PROSE" MEANS, PRECISELY
         that are not shares.
 
 TWO MORE THINGS THE PARSER HAS TO GET RIGHT
-    LOCALE. router/console.html is written in GERMAN. "die MDE liegt bei 11,4
-    pp" is refusal.mde_best_powered_arm_pair.pp with a decimal comma; a parser
-    that assumes the English thousands comma reads 114 and reports a false
-    orphan. The disambiguation rule here is NOT a heuristic over the digits --
-    it is DECLARED per artifact in ARTIFACTS, so "11,4" is 11.4 in a `de` file
-    and "10,845" is 10845 in an `en` file, with no guessing either way.
+    LOCALE. Locale is DECLARED per artifact in ARTIFACTS rather than inferred
+    from the digits, so "11,4" is 11.4 in a `de` file and "10,845" is 10845
+    in an `en` file, with no guessing either way. The router console is English.
 
     PERCENT. Shares live in claims.json as fractions and are quoted as percents:
     "41.0% of est. tokens" is policy.refused.gross_share = 0.4098. A literal
@@ -93,7 +90,7 @@ CLAIMS_NAME = os.path.join("results", "claims.json")
 #: pins that, so marking one optional to silence a red gate breaks a test.
 ARTIFACTS: tuple[tuple[str, str, str, bool], ...] = (
     ("README.md", "markdown", "en", True),
-    ("router/console.html", "html", "de", True),
+    ("router/console.html", "html", "en", True),
     ("presentation.html", "html", "en", True),
     ("templates/presentation.html", "html", "en", True),
     ("site/index.html", "html", "en", True),

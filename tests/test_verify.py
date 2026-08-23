@@ -7,10 +7,9 @@ WHAT THIS CHECKS
     checks the enforcer in both directions:
 
       * POSITIVE — the shipped tree verifies clean, and two specific bindings
-        that the parser has to get right are actually made: router/console.html
-        is GERMAN, so its "11,4 pp" is a decimal comma and must bind to
-        refusal.mde_best_powered_arm_pair.pp, not to 114; and its "1000" must
-        bind to corpus.n_trajectories.
+        that the parser has to get right are actually made: the English router
+        console's "11.4 pp" binds to refusal.mde_best_powered_arm_pair.pp, and
+        its "1,000" binds to corpus.n_trajectories.
       * NEGATIVE CONTROL — without this the check is unfalsifiable. A scratch
         copy of the tree with one number perturbed must exit non-zero and name
         the file, the line and the offending literal.
@@ -87,15 +86,12 @@ class TheShippedTreeVerifiesClean(unittest.TestCase):
     def test_the_entry_point_exits_zero(self):
         self.assertEqual(_quiet(verify.main, []), 0)
 
-    def test_the_german_decimal_comma_binds_to_the_mde(self):
-        # router/console.html:  "die MDE liegt bei 11,4 pp".  A parser that reads
-        # the comma as an English thousands separator sees 114 and reports a
-        # false orphan.  This is the one non-obvious case in the whole module.
-        keys = self._keys_for("router/console.html", "11,4")
+    def test_the_english_decimal_binds_to_the_mde(self):
+        keys = self._keys_for("router/console.html", "11.4")
         self.assertIn("refusal.mde_best_powered_arm_pair.pp", keys)
 
-    def test_the_corpus_size_binds_in_the_german_console(self):
-        keys = self._keys_for("router/console.html", "1000")
+    def test_the_corpus_size_binds_in_the_english_console(self):
+        keys = self._keys_for("router/console.html", "1,000")
         self.assertIn("corpus.n_trajectories", keys)
 
     def _keys_for(self, path, literal):
@@ -126,14 +122,14 @@ class PerturbingOneNumberIsCaught(unittest.TestCase):
         with open(path, "w", encoding="utf-8") as fh:
             fh.write(blob.replace(old, new, 1))
 
-    def test_a_perturbed_german_numeral_is_reported_with_file_and_line(self):
-        # 11,9 and not 11,7: 11.7 is recon.turns.per_line.claude-fable-5, so a
+    def test_a_perturbed_console_numeral_is_reported_with_file_and_line(self):
+        # 11.9 and not 11.7: 11.7 is recon.turns.per_line.claude-fable-5, so a
         # one-tenth slip would have bound to an unrelated claim by coincidence.
         # Value matching finds orphans, not wrong keys -- see router/verify.py.
-        self._perturb("router/console.html", "11,4 pp", "11,9 pp")
+        self._perturb("router/console.html", "11.4 pp", "11.9 pp")
         report = verify.run(root=self.tmp, claims_path=CLAIMS)
         self.assertTrue(report.orphans, "perturbing the MDE was not caught")
-        hit = [o for o in report.orphans if o.literal == "11,9"]
+        hit = [o for o in report.orphans if o.literal == "11.9"]
         self.assertTrue(hit, "orphans were reported but not the perturbed literal: %s"
                         % ([(o.path, o.literal) for o in report.orphans],))
         self.assertEqual(hit[0].path, "router/console.html")

@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="de">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Router-Konsole — Viktor Challenge</title>
+<title>Router Console — Viktor Challenge</title>
 <style>
 /* ---------------------------------------------------------------------------
    Instrumententafel, nicht Dashboard. Eine Richtung, konsequent: dunkler Grund,
@@ -314,6 +314,21 @@ details.tbl > summary:hover { color: var(--ink); }
 .err { color: var(--s-crit); font-size: 13px; }
 .busy { color: var(--ink-muted); font-size: 13px; }
 
+/* Nur die Task-Klassifizierung bekommt eine laufende Maschine als Statusbild.
+   Sobald runRoute() den Busy-Zustand auf Erfolg oder Fehler umstellt, wird das
+   Pseudo-Element entfernt und damit auch die Animation beendet. */
+@keyframes gear-spin { to { transform: rotate(1turn); } }
+#rstatus.busy::before {
+  content: "⚙";
+  display: inline-block;
+  margin-right: 7px;
+  color: var(--k-router);
+  font-size: 16px;
+  line-height: 1;
+  vertical-align: -1px;
+  animation: gear-spin .85s linear infinite;
+}
+
 footer { margin-top: 64px; padding-top: 24px; border-top: var(--rule); }
 footer ul { margin: 12px 0 0; padding-left: 18px; }
 footer li { font-size: 12.5px; color: var(--ink-muted); margin-bottom: 6px; line-height: 1.55; }
@@ -326,6 +341,10 @@ footer code { color: var(--ink-2); }
   .bar-row { grid-template-columns: 116px minmax(0,1fr) 52px; }
   .contrib-row { grid-template-columns: 112px minmax(0,1fr) 56px; }
 }
+
+@media (prefers-reduced-motion: reduce) {
+  #rstatus.busy::before { animation: none; }
+}
 </style>
 </head>
 <body>
@@ -334,8 +353,8 @@ footer code { color: var(--ink-2); }
 <div class="wrap">
 
   <header class="mast">
-    <h1>Router-Konsole</h1>
-    <span class="dim">Viktor Challenge · Off-Policy-Evaluation</span>
+    <h1>Router Console</h1>
+    <span class="dim">Viktor Challenge · Off-Policy Evaluation</span>
     <span class="spacer"></span>
     <div class="mast-stats" id="mast"></div>
   </header>
@@ -346,29 +365,29 @@ footer code { color: var(--ink-2); }
       <span class="eyebrow">01 — Frontier</span>
       <span class="rule"></span>
     </div>
-    <h2>Was kostet weniger Friction?</h2>
+    <h2>What does lower friction cost?</h2>
     <p class="sec-lede dim">
-      Jeder Punkt ist eine vollständige Policy über alle 1000 Trajektorien, neu vermessen.
-      X ist der geschätzte, cache-bewusste Preis. Y ist eine <b>Untergrenze</b> auf den
-      Composite Outcome Proxy: <code>1 − badness − 95%-Obergrenze auf den Anstieg</code>.
-      Bewusst keine Punktschätzung — die MDE liegt bei 11,4 pp, ein Punkt wäre Rauschen
-      im Anzug. Das Band nach oben ist die Manski-Verbreiterung: der Preis für
-      Trajektorien, deren Zielarm in ihrem Stratum nie beobachtet wurde.
+      Each point is a complete policy over all 1,000 trajectories, measured again.
+      X is the estimated, cache-aware cost. Y is a <b>lower bound</b> on the
+      Composite Outcome Proxy: <code>1 − badness − 95% upper bound on the increase</code>.
+      Deliberately no point estimate—the MDE is 11.4 pp, so a point would be noise
+      dressed as precision. The band above is the Manski widening: the cost of
+      trajectories whose target arm was never observed in their stratum.
     </p>
 
     <div class="split">
       <div>
         <div class="panel flush">
           <div class="chart-head">
-            <span class="eyebrow" id="axis-y-note">Composite Outcome Proxy — Untergrenze</span>
+            <span class="eyebrow" id="axis-y-note">Composite Outcome Proxy — lower bound</span>
             <span class="spacer"></span>
           </div>
           <div class="legend" id="legend"></div>
-          <div id="chart"><p class="busy" style="padding:60px 20px">Lade Pipeline …</p></div>
+          <div id="chart"><p class="busy" style="padding:60px 20px">Loading pipeline …</p></div>
         </div>
 
         <details class="tbl" open>
-          <summary>Tabellenansicht — jeder gezeichnete Punkt mit seiner Basis</summary>
+          <summary>Table view — every plotted point with its basis</summary>
           <div class="panel flush" style="margin-top:8px"><div id="ftable"></div></div>
         </details>
       </div>
@@ -376,7 +395,7 @@ footer code { color: var(--ink-2); }
       <aside>
         <div class="panel">
           <div class="ctl">
-            <span class="eyebrow">Outcome-Gewichtung</span>
+            <span class="eyebrow">Outcome weighting</span>
             <div class="seg grid2" id="presets"></div>
           </div>
           <div id="weights"></div>
@@ -385,22 +404,22 @@ footer code { color: var(--ink-2); }
 
         <div class="panel">
           <label class="ctl">
-            <span class="eyebrow">Preisblatt (angenommen)</span>
+            <span class="eyebrow">Price sheet (assumed)</span>
             <select id="sheet"></select>
           </label>
           <div class="ctl">
-            <span class="eyebrow">Konformes alpha <span class="num" id="alpha-v"></span></span>
+            <span class="eyebrow">Conformal alpha <span class="num" id="alpha-v"></span></span>
             <input type="range" id="alpha" min="0.02" max="0.30" step="0.01">
             <p class="dim" style="margin-top:4px">
-              Obergrenze für den Anteil echt friktionaler Trajektorien, die auf einen
-              billigeren Arm dürfen.
+              Upper limit on the share of truly frictional trajectories that may be
+              sent to a cheaper arm.
             </p>
           </div>
           <div class="ctl">
             <span class="eyebrow">Bootstrap</span>
             <div class="seg" id="nboot"></div>
           </div>
-          <button class="go" type="button" id="run-frontier">Routing neu rechnen</button>
+          <button class="go" type="button" id="run-frontier">Recalculate routing</button>
           <p class="dim" id="fstatus" style="margin-top:9px"></p>
         </div>
       </aside>
@@ -413,53 +432,53 @@ footer code { color: var(--ink-2); }
       <span class="eyebrow">02 — Live-Demo</span>
       <span class="rule"></span>
     </div>
-    <h2>Welches Modell bekommt <em>dieser</em> Task?</h2>
+    <h2>Which model gets <em>this</em> task?</h2>
     <p class="sec-lede dim">
-      Tippe einen Task. Er läuft durch denselben Feature-Extraktor und dieselbe
-      Fünf-Gate-Kette wie die 1000 geloggten Zeilen. Die Prozente sind <b>unsere</b>
-      Unsicherheit, nicht die des Routers: der Router ist deterministisch. Gestreut
-      wird über die 5 Fold-Prädiktoren und den Bootstrap des konformen tau — die zwei
-      Dinge, die geschätzt und nicht beobachtet wurden.
+      Enter a task. It passes through the same feature extractor and five-gate chain
+      as the 1,000 logged rows. The percentages represent <b>our</b> uncertainty,
+      not the router's: the router is deterministic. The spread comes from the five
+      fold predictors and the conformal-tau bootstrap—the two quantities that were
+      estimated rather than observed.
     </p>
 
     <div class="split flip">
       <aside>
         <div class="panel">
           <div class="ctl">
-            <span class="eyebrow">Werkzeug-Kontrakt (Gate 1)</span>
+            <span class="eyebrow">Tool contract (Gate 1)</span>
             <div class="seg" id="lane"></div>
             <p class="dim" style="margin-top:6px" id="lane-note"></p>
           </div>
           <label class="ctl">
-            <span class="eyebrow">Ausgelöst durch</span>
+            <span class="eyebrow">Triggered by</span>
             <select id="trigger"></select>
           </label>
           <div class="ctl">
-            <span class="eyebrow">Briefing-Blöcke</span>
+            <span class="eyebrow">Briefing blocks</span>
             <div id="headers"></div>
           </div>
         </div>
 
         <div class="panel">
           <div class="ctl">
-            <span class="eyebrow">Kontextzeilen <span class="num" id="ctx-v"></span></span>
+            <span class="eyebrow">Context lines <span class="num" id="ctx-v"></span></span>
             <input type="range" id="ctx" min="0" max="60" step="1">
           </div>
           <div class="ctl">
-            <span class="eyebrow">Slack-Threads <span class="num" id="thr-v"></span></span>
+            <span class="eyebrow">Slack threads <span class="num" id="thr-v"></span></span>
             <input type="range" id="thr" min="0" max="10" step="1">
           </div>
           <label class="chk"><input type="checkbox" id="img">
-            <span>Bild im Prompt <span class="dim">(Gate 2 sperrt dann jede Umleitung)</span></span></label>
+            <span>Image in prompt <span class="dim">(Gate 2 then blocks every reroute)</span></span></label>
           <label class="chk" style="margin-top:6px"><input type="checkbox" id="jobkey">
-            <span>Wiederkehrender Cron-Job <span class="dim">(Block B statt globalem Prior)</span></span></label>
+            <span>Recurring cron job <span class="dim">(Block B instead of the global prior)</span></span></label>
           <div id="job-extra" hidden style="margin-top:10px">
             <div class="ctl">
-              <span class="eyebrow">Bisherige Läufe <span class="num" id="runi-v"></span></span>
+              <span class="eyebrow">Previous runs <span class="num" id="runi-v"></span></span>
               <input type="range" id="runi" min="0" max="130" step="1">
             </div>
             <div class="ctl" style="margin-bottom:0">
-              <span class="eyebrow">Bisherige Fehlerquote <span class="num" id="jfe-v"></span></span>
+              <span class="eyebrow">Previous error rate <span class="num" id="jfe-v"></span></span>
               <input type="range" id="jfe" min="0" max="0.9" step="0.01">
             </div>
           </div>
@@ -467,11 +486,11 @@ footer code { color: var(--ink-2); }
 
         <div class="panel">
           <label class="ctl">
-            <span class="eyebrow">Ist-Modell</span>
+            <span class="eyebrow">Incumbent model</span>
             <select id="incumbent"></select>
           </label>
-          <button class="go" type="button" id="run-route">Task routen</button>
-          <p class="dim" id="rstatus" style="margin-top:9px"></p>
+          <button class="go" type="button" id="run-route">Route task</button>
+          <p class="dim" id="rstatus" role="status" aria-live="polite" style="margin-top:9px"></p>
         </div>
       </aside>
 
@@ -482,7 +501,7 @@ footer code { color: var(--ink-2); }
             <textarea id="task" spellcheck="false"></textarea>
           </label>
           <div class="ctl" style="margin-bottom:0">
-            <span class="eyebrow">Beispiele</span>
+            <span class="eyebrow">Examples</span>
             <div class="seg" id="examples"></div>
           </div>
         </div>
@@ -492,7 +511,7 @@ footer code { color: var(--ink-2); }
   </section>
 
   <footer>
-    <span class="eyebrow">Woran jede Zahl hier hängt</span>
+    <span class="eyebrow">What every number here depends on</span>
     <ul id="caveats"></ul>
   </footer>
 </div>
@@ -503,10 +522,10 @@ footer code { color: var(--ink-2); }
 /* =========================================================================
    Zahlenformate. Deutsche Konvention, tabellarische Ziffern im CSS.
    ========================================================================= */
-const nfUSD = new Intl.NumberFormat("de-DE", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
-const nfPct = new Intl.NumberFormat("de-DE", { style: "percent", maximumFractionDigits: 1 });
-const nf3   = new Intl.NumberFormat("de-DE", { minimumFractionDigits: 3, maximumFractionDigits: 3 });
-const nf2   = new Intl.NumberFormat("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const nfUSD = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+const nfPct = new Intl.NumberFormat("en-US", { style: "percent", maximumFractionDigits: 1 });
+const nf3   = new Intl.NumberFormat("en-US", { minimumFractionDigits: 3, maximumFractionDigits: 3 });
+const nf2   = new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const pp    = v => (v >= 0 ? "+" : "−") + nf2.format(Math.abs(v)) + " pp";
 
 const $  = s => document.querySelector(s);
@@ -520,7 +539,7 @@ function svg(tag, attrs) {
 }
 
 const KIND_COLOR = { logged: "var(--k-logged)", operating: "var(--k-router)", single_arm: "var(--k-single)" };
-const KIND_LABEL = { logged: "logged (Ist-Zustand)", operating: "gateter Router", single_arm: "Einzel-Arm-Policy" };
+const KIND_LABEL = { logged: "logged (current state)", operating: "gated router", single_arm: "single-arm policy" };
 
 /* Der Zustand, den die beiden Sektionen teilen. */
 const S = { boot: null, frontier: null, weights: {}, preset: null, nboot: null, lane: "claude" };
@@ -618,7 +637,7 @@ function renderFrontier(data) {
   const Y = v => M.t + ih - (v - yLo) / (yHi - yLo) * ih;
 
   const root = svg("svg", { viewBox: `0 0 ${W} ${H}`, role: "img",
-    "aria-label": "Kosten-Outcome-Frontier: geschätzte Kosten auf der X-Achse, Untergrenze des Composite Outcome Proxy auf der Y-Achse" });
+    "aria-label": "Cost-outcome frontier: estimated cost on the X axis, lower bound of the Composite Outcome Proxy on the Y axis" });
 
   /* --- Gitter, zurückhaltend --- */
   const g = svg("g", null);
@@ -639,11 +658,11 @@ function renderFrontier(data) {
   root.appendChild(g);
 
   const ax = svg("text", { x: M.l + iw / 2, y: H - 12, "text-anchor": "middle", class: "axis-title" });
-  ax.textContent = "geschätzte Kosten (cache-bewusst, input-seitig, angenommenes Blatt)";
+  ax.textContent = "estimated cost (cache-aware, input-side, assumed sheet)";
   root.appendChild(ax);
   const ay = svg("text", { x: 16, y: M.t + ih / 2, "text-anchor": "middle", class: "axis-title",
     transform: `rotate(-90 16 ${M.t + ih / 2})` });
-  ay.textContent = "Composite Outcome Proxy — Untergrenze";
+  ay.textContent = "Composite Outcome Proxy — lower bound";
   root.appendChild(ay);
 
   /* --- Referenzlinie: das Niveau, das der Ist-Zustand hält --- */
@@ -687,7 +706,7 @@ function renderFrontier(data) {
       fill: "var(--surface)", stroke: "var(--surface)", "stroke-width": 2 }));
     const hit = svg("circle", { cx: X(p.cost_usd), cy: yF, r: 16, fill: "transparent",
       class: "hit", tabindex: "0", role: "button",
-      "aria-label": `${p.label}: ${nfUSD.format(p.cost_usd)}, Untergrenze ${nf3.format(p.outcome_floor)}` });
+      "aria-label": `${p.label}: ${nfUSD.format(p.cost_usd)}, lower bound ${nf3.format(p.outcome_floor)}` });
     gp.appendChild(hit);
     gp.appendChild(svg("circle", { cx: X(p.cost_usd), cy: yF, r: hero ? 7 : 5.5,
       fill: color, class: "dot", stroke: hero ? "var(--ink)" : "none", "stroke-width": hero ? 1.5 : 0 }));
@@ -695,12 +714,12 @@ function renderFrontier(data) {
     const tipHtml =
       `<b>${p.label}</b>` +
       `<dl>` +
-      `<dt>Kosten</dt><dd>${nfUSD.format(p.cost_usd)}</dd>` +
-      `<dt>Outcome-Untergrenze</dt><dd>${nf3.format(p.outcome_floor)}</dd>` +
-      `<dt>Friction-Obergrenze</dt><dd>${pp(p.bound_pp)}</dd>` +
-      `<dt>davon Manski</dt><dd>${pp(p.manski_pp)}</dd>` +
-      `<dt>extrapolierter Spend</dt><dd>${nfPct.format(p.extrapolated_spend_share)}</dd>` +
-      `<dt>umgeleitet</dt><dd>${p.n_switched}</dd>` +
+      `<dt>Cost</dt><dd>${nfUSD.format(p.cost_usd)}</dd>` +
+      `<dt>Outcome lower bound</dt><dd>${nf3.format(p.outcome_floor)}</dd>` +
+      `<dt>Friction upper bound</dt><dd>${pp(p.bound_pp)}</dd>` +
+      `<dt>Manski portion</dt><dd>${pp(p.manski_pp)}</dd>` +
+      `<dt>Extrapolated spend</dt><dd>${nfPct.format(p.extrapolated_spend_share)}</dd>` +
+      `<dt>Rerouted</dt><dd>${p.n_switched}</dd>` +
       `</dl>`;
     const move = () => {
       const r = root.getBoundingClientRect();
@@ -733,7 +752,7 @@ function renderFrontier(data) {
   const xsAll = pts.map(q => q._x);
   const labels = pts.map(p => {
     const name = p.kind === "single_arm" ? p.arm
-      : (p.kind === "logged" ? "logged" : "gateter Router");
+      : (p.kind === "logged" ? "logged" : "gated router");
     const w = name.length * CHAR_W;
     const nextR = Math.min(M.l + iw + M.r - 8, ...xsAll.filter(x => x > p._x + 2));
     const nextL = Math.max(M.l + 4, ...xsAll.filter(x => x < p._x - 2));
@@ -771,10 +790,10 @@ function renderLegend() {
   }
   const b = el("span");
   const bi = el("i", "band"); bi.style.background = "var(--ink-2)";
-  b.appendChild(bi); b.appendChild(document.createTextNode("Manski-Verbreiterung"));
+  b.appendChild(bi); b.appendChild(document.createTextNode("Manski widening"));
   box.appendChild(b);
   const h = el("span");
-  h.appendChild(el("i", "hull")); h.appendChild(document.createTextNode("Mischungs-Frontier"));
+  h.appendChild(el("i", "hull")); h.appendChild(document.createTextNode("mixture frontier"));
   box.appendChild(h);
 }
 
@@ -782,8 +801,8 @@ function renderFrontierTable(data) {
   const host = $("#ftable");
   host.textContent = "";
   const t = el("table");
-  t.innerHTML = "<thead><tr><th>Policy</th><th>Kosten USD</th><th>Outcome-Untergrenze</th>" +
-    "<th>Friction ≤</th><th>davon Manski</th><th>extrap. Spend</th><th>umgeleitet</th></tr></thead>";
+  t.innerHTML = "<thead><tr><th>Policy</th><th>Cost USD</th><th>Outcome lower bound</th>" +
+    "<th>Friction ≤</th><th>Manski portion</th><th>Extrap. spend</th><th>Rerouted</th></tr></thead>";
   const tb = el("tbody");
   for (const p of data.points.slice().sort((a, b) => a.cost_usd - b.cost_usd)) {
     const tr = el("tr");
@@ -814,10 +833,10 @@ function renderResult(d) {
   /* --- Kopfzahlen --- */
   const kp = el("div", "kpis");
   const mk = (v, l) => { const k = el("div", "kpi"); k.appendChild(el("div", "v", v)); k.appendChild(el("div", "l", l)); return k; };
-  kp.appendChild(mk(lead ? nfPct.format(lead[1]) : "—", "auf " + (lead ? lead[0] : "—")));
-  kp.appendChild(mk(nfPct.format(d.p_tau_pass), "Ziehungen unter tau"));
-  kp.appendChild(mk(nf3.format(d.tau_point), "tau (Punkt)"));
-  kp.appendChild(mk(String(d.n_draws), "Ziehungen (5 Folds × tau)"));
+  kp.appendChild(mk(lead ? nfPct.format(lead[1]) : "—", "to " + (lead ? lead[0] : "—")));
+  kp.appendChild(mk(nfPct.format(d.p_tau_pass), "draws below tau"));
+  kp.appendChild(mk(nf3.format(d.tau_point), "tau (point)"));
+  kp.appendChild(mk(String(d.n_draws), "draws (5 folds × tau)"));
   host.appendChild(kp);
 
   /* --- Stützungswarnung, falls der Task außerhalb der Wolke liegt --- */
@@ -832,8 +851,8 @@ function renderResult(d) {
 
   /* --- Die Verteilung. EINE Serie, also EINE Farbe und Direktwerte. --- */
   const bp = el("div", "panel");
-  bp.appendChild(el("h3", null, "Wahrscheinlichkeit je Modell"));
-  bp.appendChild(el("p", "dim", "Anteil der Ziehungen, die auf diesem Arm landen — " + d.ui.incumbent_mode + "."));
+  bp.appendChild(el("h3", null, "Probability by model"));
+  bp.appendChild(el("p", "dim", "Share of draws that land on this arm — " + d.ui.incumbent_mode + "."));
   const bars = el("div", "bars");
   bars.style.marginTop = "14px";
   const max = Math.max(...entries.map(e => e[1]), 0.0001);
@@ -858,21 +877,21 @@ function renderResult(d) {
   const pi = d.per_incumbent[inc];
   const gt = pi.gates;
   const gp = el("div", "panel");
-  gp.appendChild(el("h3", null, "Gate-Kette"));
-  gp.appendChild(el("p", "dim", `Ist-Modell ${inc} · p_fric ${nf3.format(pi.p_fric_mean)} ` +
-    `(Folds ${nf3.format(pi.p_fric_lo)}–${nf3.format(pi.p_fric_hi)})`));
+  gp.appendChild(el("h3", null, "Gate chain"));
+  gp.appendChild(el("p", "dim", `Incumbent model ${inc} · p_fric ${nf3.format(pi.p_fric_mean)} ` +
+    `(folds ${nf3.format(pi.p_fric_lo)}–${nf3.format(pi.p_fric_hi)})`));
   const gl = el("div", "gates");
   gl.style.marginTop = "12px";
   const rows = [
-    ["1", "Family-Lane", "aus dem Werkzeug-Kontrakt gelesen, nie gewählt", gt.family, "v-info"],
-    ["2", "Vision-Gate", "Bild vor dem ersten User-Turn sperrt jede Umleitung",
-      gt.vision ? "gesperrt" : "frei", gt.vision ? "v-stop" : "v-pass"],
-    ["3", "Zulässige Arme", "mindestens 21 geloggte Läufe",
-      gt.admissible.length ? gt.admissible.join(", ") : "keine", gt.admissible.length ? "v-pass" : "v-stop"],
-    ["4", "Vorzeichenstabil billiger", "billiger unter ALLEN drei angenommenen Blättern",
-      gt.sign_stable.length ? gt.sign_stable.join(", ") : "kein Ziel", gt.sign_stable.length ? "v-pass" : "v-stop"],
-    ["5", "tau-Gate", "kalibriertes p_fric ≤ tau",
-      gt.tau_pass ? "passiert" : "gehalten", gt.tau_pass ? "v-pass" : "v-stop"],
+    ["1", "Family lane", "read from the tool contract, never chosen", gt.family, "v-info"],
+    ["2", "Vision gate", "an image before the first user turn blocks every reroute",
+      gt.vision ? "blocked" : "clear", gt.vision ? "v-stop" : "v-pass"],
+    ["3", "Admissible arms", "at least 21 logged runs",
+      gt.admissible.length ? gt.admissible.join(", ") : "none", gt.admissible.length ? "v-pass" : "v-stop"],
+    ["4", "Sign-stable cheaper", "cheaper under ALL three assumed sheets",
+      gt.sign_stable.length ? gt.sign_stable.join(", ") : "no target", gt.sign_stable.length ? "v-pass" : "v-stop"],
+    ["5", "Tau gate", "calibrated p_fric ≤ tau",
+      gt.tau_pass ? "passed" : "held", gt.tau_pass ? "v-pass" : "v-stop"],
   ];
   for (const [n, title, sub, verdict, cls] of rows) {
     const r = el("div", "gate");
@@ -889,7 +908,7 @@ function renderResult(d) {
 
   /* --- Warum dieser Task und nicht irgendeiner --- */
   const ep = el("div", "panel");
-  ep.appendChild(el("h3", null, "Warum dieser Score"));
+  ep.appendChild(el("h3", null, "Why this score"));
   ep.appendChild(el("p", "dim", d.ui.explain_basis));
   const cl = el("div", "contrib");
   cl.style.marginTop = "13px";
@@ -912,8 +931,8 @@ function renderResult(d) {
     f.style.cssText = `left:${pos ? 50 : 50 - w}%;width:${w}%;` +
       `background:${pos ? "var(--s-crit)" : "var(--s-good)"};opacity:${t.sign_stable ? .95 : .45}`;
     bar.appendChild(f);
-    bar.title = (pos ? "erhöht" : "senkt") + " das Friction-Risiko" +
-      (t.sign_stable ? "" : " — Vorzeichen NICHT über alle Folds stabil");
+    bar.title = (pos ? "increases" : "decreases") + " friction risk" +
+      (t.sign_stable ? "" : " — sign NOT stable across all folds");
     row.appendChild(nm); row.appendChild(bar);
     row.appendChild(el("div", null, nf2.format(t.contribution)));
     cl.appendChild(row);
@@ -921,10 +940,10 @@ function renderResult(d) {
   ep.appendChild(cl);
   const lg = el("p", "dim");
   lg.style.marginTop = "12px";
-  lg.innerHTML = '<span style="color:var(--s-crit)">■</span> erhöht das Friction-Risiko &nbsp; ' +
-    '<span style="color:var(--s-good)">■</span> senkt es &nbsp; · &nbsp; ' +
-    'blass = Vorzeichen nicht über alle 5 Folds stabil &nbsp; · &nbsp; ' +
-    '⚠ = Vorzeichen umgekehrt gegenüber der Einzelkorrelation (draufzeigen)';
+  lg.innerHTML = '<span style="color:var(--s-crit)">■</span> increases friction risk &nbsp; ' +
+    '<span style="color:var(--s-good)">■</span> decreases it &nbsp; · &nbsp; ' +
+    'faded = sign not stable across all 5 folds &nbsp; · &nbsp; ' +
+    '⚠ = sign reversed relative to the marginal correlation (hover for details)';
   ep.appendChild(lg);
   host.appendChild(ep);
 }
@@ -941,8 +960,8 @@ function buildFrontierControls(boot) {
     d.appendChild(el("span", "eyebrow", l));
     return d;
   };
-  mast.appendChild(stat(String(boot.n_trajectories), "Trajektorien"));
-  mast.appendChild(stat(String(Object.keys(boot.arm_counts).length), "Arme"));
+  mast.appendChild(stat(String(boot.n_trajectories), "Trajectories"));
+  mast.appendChild(stat(String(Object.keys(boot.arm_counts).length), "Arms"));
   mast.appendChild(stat(nf3.format(boot.tau_point), "tau"));
 
   const ps = $("#presets");
@@ -973,7 +992,7 @@ function buildFrontierControls(boot) {
     box.appendChild(top);
     const r = document.createElement("input");
     r.type = "range"; r.min = "0"; r.max = "1"; r.step = "0.05"; r.dataset.comp = c;
-    r.setAttribute("aria-label", "Gewicht " + c);
+    r.setAttribute("aria-label", "Weight " + c);
     r.oninput = () => {
       S.weights[c] = Number(r.value);
       S.preset = null;
@@ -982,7 +1001,7 @@ function buildFrontierControls(boot) {
     };
     box.appendChild(r);
     box.appendChild(el("div", "wt-base",
-      `Basisrate ${nfPct.format(base.count_weighted)} der Läufe · ${nfPct.format(base.spend_weighted)} des Spend`));
+      `Base rate ${nfPct.format(base.count_weighted)} of runs · ${nfPct.format(base.spend_weighted)} of spend`));
     box.title = base.note;
     box._val = val;
     ws.appendChild(box);
@@ -992,7 +1011,7 @@ function buildFrontierControls(boot) {
   for (const s of boot.sheets) {
     const o = document.createElement("option");
     o.value = s;
-    o.textContent = s + (s === boot.default_sheet ? "  (Standard)" : "");
+    o.textContent = s + (s === boot.default_sheet ? "  (default)" : "");
     sh.appendChild(o);
   }
   sh.value = boot.default_sheet;
@@ -1004,8 +1023,8 @@ function buildFrontierControls(boot) {
   const nb = $("#nboot");
   nb.textContent = "";
   S.nboot = boot.n_boot.interactive;
-  for (const [label, v] of [["schnell · " + boot.n_boot.interactive, boot.n_boot.interactive],
-                            ["publiziert · " + boot.n_boot.published, boot.n_boot.published]]) {
+  for (const [label, v] of [["fast · " + boot.n_boot.interactive, boot.n_boot.interactive],
+                            ["published · " + boot.n_boot.published, boot.n_boot.published]]) {
     const b = el("button", null, label);
     b.type = "button";
     b.setAttribute("aria-pressed", String(v === S.nboot));
@@ -1029,19 +1048,19 @@ function syncWeights() {
     box._val.textContent = total > 0 ? nfPct.format(S.weights[r.dataset.comp] / total) : "—";
   }
   $("#wdef").textContent = total > 0
-    ? "Normiert auf Summe 1. Eine ERKLÄRTE Gewichtung — nenne sie mit jeder Zahl."
-    : "Alle Gewichte null — das ist keine Metrik.";
+    ? "Normalized to sum to 1. A DECLARED weighting—report it with every number."
+    : "All weights are zero—this is not a metric.";
 }
 
 const EXAMPLES = [
   ["Cron-Ping", { task: "Post the daily standup reminder in the team channel.",
                   trigger: "cron", ctx: 2, thr: 0, headers: ["hdr_thread_info"] }],
-  ["Slack-Eskalation", { task: "The nightly ETL failed again. Read the last three execution logs, find the failing step, patch the config and report back in this thread with what you changed.",
+  ["Slack escalation", { task: "The nightly ETL failed again. Read the last three execution logs, find the failing step, patch the config and report back in this thread with what you changed.",
                   trigger: "slack_mention", ctx: 42, thr: 7,
                   headers: ["hdr_thread_info", "hdr_channel_thread", "hdr_recent_dm"] }],
-  ["Cron mit Historie", { task: "Summarise yesterday's incidents and post the digest to the ops channel.",
+  ["Cron with history", { task: "Summarise yesterday's incidents and post the digest to the ops channel.",
                   trigger: "cron", ctx: 12, thr: 1, headers: ["hdr_thread_info", "hdr_cron_history"] }],
-  ["Bild-Task", { task: "What does this dashboard screenshot show? Flag anything that looks off.",
+  ["Image task", { task: "What does this dashboard screenshot show? Flag anything that looks off.",
                   trigger: "slack_dm", ctx: 3, thr: 1, headers: ["hdr_thread_info"], img: true }],
 ];
 
@@ -1130,18 +1149,18 @@ function syncLane(boot) {
   sel.textContent = "";
   const any = document.createElement("option");
   any.value = "";
-  any.textContent = "über den geloggten Mix mitteln";
+  any.textContent = "average over the logged mix";
   sel.appendChild(any);
   for (const [arm, share] of Object.entries(info.incumbents)) {
     const o = document.createElement("option");
     o.value = arm;
-    o.textContent = `${arm} — ${nfPct.format(share)} der Lane`;
+    o.textContent = `${arm} — ${nfPct.format(share)} of the lane`;
     sel.appendChild(o);
   }
-  $("#lane-note").textContent = `Werkzeuge: ${info.tools.join(", ")}. ` +
+  $("#lane-note").textContent = `Tools: ${info.tools.join(", ")}. ` +
     (S.lane === "gpt"
-      ? "In dieser Lane bepreisen sich sol und terra unter jedem Blatt identisch — Gate 4 findet kein vorzeichenstabil billigeres Ziel, der Router lehnt jede Umleitung ab."
-      : "Gate 1 liest die Lane aus dem Werkzeug-Kontrakt; ein Lane-Wechsel wäre ein anderer Vertrag, keine Preisentscheidung.");
+      ? "In this lane, sol and terra have identical prices under every sheet—Gate 4 finds no sign-stable cheaper target, so the router refuses every reroute."
+      : "Gate 1 reads the lane from the tool contract; changing lanes would be a different contract, not a pricing decision.");
 }
 
 /* =========================================================================
@@ -1162,10 +1181,10 @@ async function runFrontier() {
   const btn = $("#run-frontier"), st = $("#fstatus");
   btn.disabled = true;
   st.className = "busy";
-  st.textContent = `rechne ${S.nboot} Bootstrap-Replikate über 9 Policies …`;
+  st.textContent = `running ${S.nboot} bootstrap replicates across 9 policies …`;
   try {
     const total = Object.values(S.weights).reduce((a, b) => a + b, 0);
-    if (!(total > 0)) throw new Error("Alle Gewichte sind null — das ist keine Metrik.");
+    if (!(total > 0)) throw new Error("All weights are zero—this is not a metric.");
     const data = await post("/api/frontier", {
       weights: S.weights,
       sheet: $("#sheet").value,
@@ -1177,7 +1196,7 @@ async function runFrontier() {
     renderFrontierTable(data);
     $("#axis-y-note").textContent = data.outcome.definition;
     st.className = "dim";
-    st.textContent = data.outcome.caveat_de;
+    st.textContent = data.outcome.caveat;
   } catch (e) {
     st.className = "err";
     st.textContent = e.message;
@@ -1189,8 +1208,9 @@ async function runFrontier() {
 async function runRoute() {
   const btn = $("#run-route"), st = $("#rstatus");
   btn.disabled = true;
+  btn.setAttribute("aria-busy", "true");
   st.className = "busy";
-  st.textContent = "ziehe 5 Folds × tau-Bootstrap …";
+  st.textContent = "classifying task · drawing 5 folds × tau bootstrap …";
   try {
     const headers = [...$("#headers").querySelectorAll("input:checked")].map(i => i.value);
     const d = await post("/api/route", {
@@ -1216,6 +1236,7 @@ async function runRoute() {
     st.textContent = e.message;
   } finally {
     btn.disabled = false;
+    btn.removeAttribute("aria-busy");
   }
 }
 
@@ -1296,8 +1317,8 @@ function applyQuery(boot) {
     await runRoute();
   } catch (e) {
     $("#chart").innerHTML = '<p class="err" style="padding:40px 20px">' +
-      "Konnte die Pipeline nicht laden: " + e.message +
-      '<br><span class="dim">Läuft der Server? <code>make console</code></span></p>';
+      "Could not load the pipeline: " + e.message +
+      '<br><span class="dim">Is the server running? <code>make console</code></span></p>';
   }
 })();
 </script>

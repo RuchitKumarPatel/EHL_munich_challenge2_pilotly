@@ -61,10 +61,10 @@ echo "default state"
 dump default ""
 want default "chart drawn"                     "<svg"
 want default "balanced metric on the axis"     "badness = 0.4·err_any"
-want default "frontier table filled"           "alles zulässige → claude-fable-5"
-want default "live demo rendered"              "Wahrscheinlichkeit je Modell"
-want default "gate chain rendered"             "tau-Gate"
-want default "caveats rendered"                "Der Export hat kein"
+want default "frontier table filled"           "all admissible → claude-fable-5"
+want default "live demo rendered"              "Probability by model"
+want default "gate chain rendered"             "Tau gate"
+want default "caveats rendered"                "The export has no"
 
 echo
 # The whole point of this state: the browser path must land on the SAME numbers
@@ -74,11 +74,11 @@ echo
 echo "?preset=repo_baseline&n_boot=2000 — must reproduce results/frontier.csv"
 dump baseline "?preset=repo_baseline&n_boot=2000"
 want baseline "axis switches to the err_any corner" "badness = 1·err_any"
-want baseline "published logged cost"               "413&nbsp;\$"
-want baseline "published all→fable cost"            "78&nbsp;\$"
-want baseline "published gated-router cost"         "375&nbsp;\$"
-want baseline "published all→fable bound"           "+6,65 pp"
-want baseline "published gated-router bound"        "+0,76 pp"
+want baseline "published logged cost"               "\$413"
+want baseline "published all→fable cost"            "\$78"
+want baseline "published gated-router cost"         "\$375"
+want baseline "published all→fable bound"           "+6.65 pp"
+want baseline "published gated-router bound"        "+0.76 pp"
 want baseline "published rerouted count"            ">119<"
 
 echo
@@ -86,14 +86,14 @@ echo "?lane=gpt&example=Slack — gate 4 finds no sign-stable target"
 dump gpt "?lane=gpt&example=Slack"
 want gpt "gpt arms in the distribution"  "gpt-5.6-"
 deny gpt "no claude arm leaks in"        "claude-opus-5</div>"
-want gpt "gate 4 refuses"                "kein Ziel"
-want gpt "lane note explains the refusal" "bepreisen sich sol und terra"
+want gpt "gate 4 refuses"                "no target"
+want gpt "lane note explains the refusal" "sol and terra have identical prices"
 
 echo
-echo "?example=Bild — the vision gate blocks every reroute"
-dump img "?example=Bild"
-want img "vision gate blocks"     ">gesperrt<"
-want img "image feature is rare"  "seltene"
+echo "?example=Image — the vision gate blocks every reroute"
+dump img "?example=Image"
+want img "vision gate blocks"     ">blocked<"
+want img "image feature is rare"  "rare"
 
 echo
 echo "?preset=severity&alpha=0.2 — knobs move together"

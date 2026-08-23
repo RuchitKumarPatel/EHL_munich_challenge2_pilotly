@@ -95,13 +95,13 @@ PUBLISHED_N_BOOT = 2000
 
 #: Caveats shown in the console's footer, verbatim from the modules that own them.
 CAVEATS = [
-    "Alle Token-Zahlen sind SCHÄTZUNGEN: tok(x) = len(json.dumps(x)) // 4. Der Export hat kein `usage`-Feld.",
-    "Alle Dollar-Beträge sind INPUT-SEITIG (der Export hat kein `output`-Feld) und nennen ihr ANGENOMMENES Preisblatt.",
-    "Modell-ids sind anonymisiert (AGENTS.md) — kein öffentliches Preisblatt gilt. Gate 4 verlangt deshalb, dass ein Ziel unter ALLEN drei Blättern billiger ist.",
-    "Die Y-Achse ist PROZESS-Friction aus Tool-Exit-Codes, nie Antwortqualität. Es gibt in diesem Export kein Qualitätslabel.",
-    "Der Composite ist eine ERKLÄRTE Gewichtung, keine gemessene Größe. Nenne die Gewichte immer mit der Zahl.",
-    "Jeder Policy-Punkt ist eine 95%-OBERGRENZE auf den Friction-Anstieg, nie ein Punktschätzer: die MDE liegt bei 11,4 pp.",
-    "Die Streuung in der Live-Demo ist UNSERE Unsicherheit (5 Folds + tau-Bootstrap). Der Router selbst würfelt nicht.",
+    "All token counts are ESTIMATES: tok(x) = len(json.dumps(x)) // 4. The export has no `usage` field.",
+    "All dollar amounts are INPUT-SIDE (the export has no `output` field) and name their ASSUMED price sheet.",
+    "Model IDs are anonymized (AGENTS.md), so no public price sheet applies. Gate 4 therefore requires a target to be cheaper under ALL three sheets.",
+    "The Y axis is PROCESS friction from tool exit codes, never answer quality. This export has no quality label.",
+    "The composite is a DECLARED weighting, not a measured quantity. Always report the weights with the number.",
+    "Every policy point is a 95% UPPER BOUND on the friction increase, never a point estimate: the MDE is 11.4 pp.",
+    "The spread in the live demo is OUR uncertainty (5 folds + tau bootstrap). The router itself does not roll dice.",
 ]
 
 
@@ -239,7 +239,7 @@ def frontier(preset: str | None = None, weights: dict | None = None,
     logged_badness = _outcome.logged_level(panel, "spend")
 
     points = [{
-        "label": "logged (wie ausgeliefert)", "kind": "logged", "arm": "",
+        "label": "logged (as delivered)", "kind": "logged", "arm": "",
         "cost_usd": total_cost(recon, None, sheet),
         "bound_pp": 0.0, "manski_pp": 0.0, "identified_upper_pp": 0.0,
         "outcome_floor": 1.0 - logged_badness,
@@ -248,7 +248,7 @@ def frontier(preset: str | None = None, weights: dict | None = None,
     }]
 
     for arm in _figs.admissible_arms(panel):
-        points.append(_point(f"alles zulässige → {arm}", "single_arm", panel,
+        points.append(_point(f"all admissible → {arm}", "single_arm", panel,
                              _ope.policy_route_to(panel, arm), recon,
                              logged_badness, sheet, n_boot, arm=arm))
 
@@ -275,10 +275,10 @@ def frontier(preset: str | None = None, weights: dict | None = None,
                            for h in hull_pts)
 
     described = _outcome.describe(w)
-    described["caveat_de"] = (
-        "identisch mit dem publizierten binären y_fric — jede Zahl deckt sich mit results/"
+    described["caveat"] = (
+        "identical to the published binary y_fric—every number matches results/"
         if described["is_repo_baseline"] else
-        "eine ERKLÄRTE Gewichtung, kein gemessenes Qualitätslabel — nenne die Gewichte mit der Zahl"
+        "a DECLARED weighting, not a measured quality label—report the weights with the number"
     )
     out = {
         "points": points,
@@ -289,8 +289,8 @@ def frontier(preset: str | None = None, weights: dict | None = None,
         "alpha": alpha,
         "n_boot": n_boot,
         "axis": {
-            "x": "geschätzte Kosten USD (cache-aware, input-seitig, ANGENOMMENES Blatt)",
-            "y": "Composite Outcome Proxy — UNTERGRENZE (1 − badness − 95%-Obergrenze auf den Anstieg)",
+            "x": "estimated cost USD (cache-aware, input-side, ASSUMED sheet)",
+            "y": "Composite Outcome Proxy — LOWER BOUND (1 − badness − 95% upper bound on the increase)",
         },
     }
     with _LOCK:
@@ -335,20 +335,20 @@ def route_task(task: str, lane: str = "claude", trigger: str = "cron",
     dist["explain"] = _serve.explain(ens, x, lead)
     dist["features"] = {c: float(v) for c, v in zip(ens.cols, x)}
 
-    # This server is the UI seam, and the UI speaks German. The router modules
+    # This server is the UI seam, and the UI speaks English. The router modules
     # keep their English strings (they are the repo's code language and are
     # printed by every acceptance check); the German wording is attached here so
     # neither side has to know about the other's audience.
     dist["ui"] = {
-        "incumbent_mode": ("Ist-Modell fest auf " + incumbent if incumbent else
-                           "über den geloggten Modell-Mix der Lane gemittelt"),
-        "basis": ("Die Streuung kommt aus den 5 Fold-Prädiktoren und dem Bootstrap des "
-                  "konformen tau — der Router selbst ist deterministisch. p_fric ist "
-                  "PROZESS-Friction aus Tool-Exit-Codes, nie Antwortqualität."),
-        "explain_basis": ("Beitrag = standardisierter Merkmalswert × gefitteter Slope, "
-                          "gemittelt über die 5 Folds. Erklärt wird der SCORE, den der "
-                          "isotone Kalibrator dann auf p_fric abbildet — monoton, also "
-                          "überträgt sich die Reihenfolge, nicht die Größenordnung."),
+        "incumbent_mode": ("incumbent model fixed to " + incumbent if incumbent else
+                           "averaged over the lane's logged model mix"),
+        "basis": ("The spread comes from the 5 fold predictors and the conformal-tau "
+                  "bootstrap—the router itself is deterministic. p_fric is PROCESS "
+                  "friction from tool exit codes, never answer quality."),
+        "explain_basis": ("Contribution = standardized feature value × fitted slope, "
+                          "averaged over the 5 folds. This explains the SCORE that the "
+                          "isotonic calibrator maps to p_fric. The mapping is monotonic, "
+                          "so rank carries over but magnitude does not."),
     }
 
     dist["support"] = support_check(ens, x)
@@ -402,17 +402,17 @@ def support_check(ens: _serve.Ensemble, x: np.ndarray) -> dict:
     in_range = worst_z < 4.0 and not unseen
     if unseen:
         names = ", ".join(unseen)
-        note = (f"Eine Kategorie in diesem Task kommt im Export NIE vor ({names}) — "
-                "die Verteilung ist reine Extrapolation.")
+        note = (f"A category in this task NEVER occurs in the export ({names})—"
+                "the distribution is pure extrapolation.")
     elif not in_range:
-        note = (f"'{worst_col}' liegt {worst_z:.1f} Standardabweichungen vom Korpus "
-                "entfernt — als Extrapolation lesen, nicht als Entscheidung.")
+        note = (f"'{worst_col}' is {worst_z:.1f} standard deviations from the corpus—"
+                "read this as extrapolation, not a decision.")
     elif rare:
         names = ", ".join(r["col"] for r in rare)
-        note = (f"Innerhalb der Trainingswolke, aber {len(rare)} seltene "
-                f"Merkmalswerte ({names}) — die Folds streuen hier stärker.")
+        note = (f"Inside the training cloud, but with {len(rare)} rare feature values "
+                f"({names})—the folds spread more widely here.")
     else:
-        note = "Typischer Task: alle Merkmale liegen im dicht besetzten Teil des Korpus."
+        note = "Typical task: all features lie in the densely populated part of the corpus."
     return {
         "in_range": bool(in_range),
         "max_abs_z": worst_z,
@@ -420,9 +420,9 @@ def support_check(ens: _serve.Ensemble, x: np.ndarray) -> dict:
         "rare": rare,
         "never_seen": unseen,
         "note": note,
-        "basis": ("stetige Spalten per |z| gegen die Trainingsmomente; binäre Spalten "
-                  "per Häufigkeit des Werts im Export — ein z-Score auf einem "
-                  "Fast-Konstant-Indikator misst nichts."),
+        "basis": ("continuous columns use |z| against the training moments; binary "
+                  "columns use the value's frequency in the export—a z-score on an "
+                  "almost-constant indicator measures nothing."),
     }
 
 
@@ -575,8 +575,8 @@ def acceptance() -> list[tuple]:
     # the published frontier, reproduced through the console's own code path
     f = frontier(preset="repo_baseline", n_boot=PUBLISHED_N_BOOT)
     by = {p["label"]: p for p in f["points"]}
-    logged = by["logged (wie ausgeliefert)"]
-    fable = by["alles zulässige → claude-fable-5"]
+    logged = by["logged (as delivered)"]
+    fable = by["all admissible → claude-fable-5"]
     gated = next(p for p in f["points"] if p["kind"] == "operating")
     rows.append((abs(logged["cost_usd"] - 412.9544292) < 1e-4,
                  "frontier: logged cost USD", 412.9544, round(logged["cost_usd"], 4)))
@@ -668,7 +668,7 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     httpd = ThreadingHTTPServer((a.host, a.port), Handler)
-    print(f"router console on http://{a.host}:{a.port}/  (Strg-C beendet)", file=sys.stderr)
+    print(f"router console on http://{a.host}:{a.port}/  (Ctrl-C to stop)", file=sys.stderr)
     print(f"  raw-trajectory explorer on http://{a.host}:{a.port}/explorer", file=sys.stderr)
     try:
         httpd.serve_forever()
