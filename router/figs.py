@@ -1,54 +1,9 @@
 #!/usr/bin/env python3
-"""The single headline chart: cost against a friction UPPER BOUND, never a point.
+"""Plot estimated spend against the upper bound on process friction.
 
-WHAT THIS COMPUTES
-    One panel, one question: if you move spend off the logged arms, how much
-    process friction could you be buying, at worst?
-
-      X  re-metered cache-aware spend in USD, log scale. The re-metered basis is
-         the reconstructed turn-prefix bill from results/recon.jsonl
-         (334,729,910 est. tok), not the starter kit's flat per-item sum
-         (22,631,879 est. tok). A ghost tick marks where the starter kit's
-         dollar figure lands, and the logged operating point is marked.
-      Y  the 95% ONE-SIDED UPPER BOUND on the spend-weighted friction increase
-         over the logged policy, in percentage points. Never a point estimate:
-         the MDE is 11.4pp on the best-powered arm pair, so a point difference
-         at this n would be noise dressed as a decision. y = 0 is logged parity.
-         The axis measures PROCESS FRICTION, NOT ANSWER QUALITY.
-
-    On top of that: the non-decreasing convex hull over the admissible
-    single-arm policies (dashed — everything on or under it is reachable by
-    randomising between two arms, so a router only earns its complexity by
-    sitting below it on this axis); job-clustered bootstrap whiskers on three
-    named operating points; a shaded region carrying the refused share of
-    spend; and the support-deficiency share as a hatched rug on its own axis.
-
-WHY THE SUPPORT DEFICIT IS A RUG AND NOT A BAND
-    The share of spend whose target arm was never observed in its stratum is a
-    dimensionless fraction of dollars. Drawn as a vertical band on the friction
-    axis it would be read as a confidence interval, which it is not — it is a
-    statement about which counterfactuals the data can speak to at all. It gets
-    its own hatched axis, its own scale and its own units.
-
-WHAT IT WRITES
-    results/frontier.png   the chart (matplotlib Agg, no display required)
-    results/frontier.csv   every plotted point, with the basis on every row
-
-ACCEPTANCE (checked by `python -m router.figs`)
-    Reproduced from the artifacts, not transcribed:
-      logged re-metered spend                    $412.95  [assumed_default]
-      starter-kit naive spend                    $146.14  [assumed_default]
-        -> the token bases differ by 14.79x but the DOLLAR figures differ by
-           2.83x, because the re-metered bill also earns the cache discount.
-           Quoting 14.79x as a dollar correction would be wrong.
-      refused spend       325 lines, 41.0% of est. gross tokens, $56.72
-        -> the refused share is token-heavy and dollar-light (13.7% of $),
-           because most of it is the cheap gpt lane.
-      hull vertices       claude-fable-5 -> claude-sonnet-5 -> claude-opus-5
-      gated router        $375.45, bound <= +0.76pp, 119 reroutes
-      all-eligible -> claude-fable-5   $78.22, bound <= +6.65pp, 681 reroutes
-      and the finding the chart exists to show: the gated router does NOT sit
-      below the single-arm mixture frontier.
+Writes ``results/frontier.png`` and the plotted data to
+``results/frontier.csv``. Run ``python -m router.figs`` to rebuild both and
+check the expected values.
 """
 from __future__ import annotations
 
@@ -449,7 +404,6 @@ def render(data: dict, path: Path | str = PNG_PATH) -> Path:
     named = data["named"]
     logged = data["logged"]
     hull = data["hull"]
-    refused = data["refused"]
     gated = named[0]
 
     all_pts = ([logged] + [p for p in data["single_arms"] if p["plotted"]]
@@ -460,15 +414,12 @@ def render(data: dict, path: Path | str = PNG_PATH) -> Path:
                + [p["ci_hi_pp"] for p in named if p["ci_hi_pp"] is not None])
     span = hi_y - lo_y
     ylim = (lo_y - 0.22 * span, hi_y + 0.20 * span)
-    xlim = (refused["usd"] * 0.70, max(p["cost_usd"] for p in all_pts) * 1.55)
+    xlim = (min(p["cost_usd"] for p in all_pts) * 0.80,
+            max(p["cost_usd"] for p in all_pts) * 1.20)
 
     fig = plt.figure(figsize=(15.0, 9.2), dpi=170, facecolor="white")
-    gs = fig.add_gridspec(
-        2, 1, height_ratios=[7.0, 1.15], hspace=0.10,
-        left=0.078, right=0.975, top=0.775, bottom=0.225,
-    )
-    ax = fig.add_subplot(gs[0])
-    rug = fig.add_subplot(gs[1], sharex=ax)
+    ax = fig.add_subplot(111)
+    fig.subplots_adjust(left=0.078, right=0.975, top=0.775, bottom=0.205)
 
     ax.set_xscale("log")
     ax.set_xlim(*xlim)
@@ -477,24 +428,11 @@ def render(data: dict, path: Path | str = PNG_PATH) -> Path:
     ax.grid(True, which="major", axis="both", color=GRIDC, linewidth=1.0, zorder=0)
     ax.set_axisbelow(True)
 
-    # --- the refused floor: spend no router can move -------------------------
-    # Rotated inside its own band so it can never collide with the plot body.
-    ax.axvspan(xlim[0], refused["usd"], color=PEACH, alpha=0.45, zorder=1, lw=0)
-    ax.axvline(refused["usd"], color="#D97B49", lw=1.5, alpha=0.95, zorder=2)
-    ax.text(
-        (xlim[0] * refused["usd"]) ** 0.5, ylim[0] + 0.5 * (ylim[1] - ylim[0]),
-        f"REFUSED FLOOR  ${refused['usd']:,.0f}  ·  {refused['n']} lines\n"
-        f"{refused['gross_share']:.1%} of est. tokens, "
-        f"{refused['usd_share']:.1%} of est. $",
-        rotation=90, ha="center", va="center", fontsize=10.5, linespacing=1.6,
-        color="#8A4B23", zorder=6,
-    )
-
     # --- logged parity ------------------------------------------------------
     ax.axhline(0.0, color=INK, lw=1.3, ls=(0, (6, 4)), alpha=0.5, zorder=3)
     ax.text(
         xlim[1] * 0.99, 0.012 * (ylim[1] - ylim[0]),
-        "logged parity", ha="right", va="bottom", fontsize=11.5,
+        "same friction as current policy", ha="right", va="bottom", fontsize=11.5,
         color=INK, alpha=0.7, zorder=6,
     )
 
@@ -517,7 +455,8 @@ def render(data: dict, path: Path | str = PNG_PATH) -> Path:
             ax.plot(p["cost_usd"], p["bound_pp"], marker="o", ms=10,
                     mfc="white", mec=VIOLET, mew=2.0, zorder=5)
             ax.annotate(
-                p["arm"], xy=(p["cost_usd"], p["bound_pp"]),
+                p["arm"].removeprefix("claude-"),
+                xy=(p["cost_usd"], p["bound_pp"]),
                 xytext=(xpos * 1.085, ay), textcoords="data",
                 ha="left", va="center", fontsize=11, color=MUTED, zorder=6,
                 arrowprops=dict(arrowstyle="-", color=GHOST, lw=0.9,
@@ -526,6 +465,11 @@ def render(data: dict, path: Path | str = PNG_PATH) -> Path:
 
     # --- the three named operating points, with job-clustered whiskers -------
     label_offsets = {"gated router (tau)": (0, 58)}
+    display_labels = {
+        "gated router (tau)": "new router",
+        "all eligible -> claude-sonnet-5": "sonnet-5 only",
+        "all eligible -> claude-fable-5": "fable-5 only",
+    }
     for p in named:
         lo, hi = p["ci_lo_pp"], p["ci_hi_pp"]
         ax.plot([p["cost_usd"]] * 2, [lo, hi], color=VIOLET, lw=2.6,
@@ -536,7 +480,8 @@ def render(data: dict, path: Path | str = PNG_PATH) -> Path:
         ax.plot(p["cost_usd"], p["bound_pp"], marker="D", ms=12,
                 mfc=VIOLET, mec="white", mew=1.6, zorder=7)
         ax.annotate(
-            f"{p['label']}\n<= {p['bound_pp']:+.2f} pp   ${p['cost_usd']:,.0f}",
+            f"{display_labels[p['label']]}\n"
+            f"{p['bound_pp']:+.2f} max   ${p['cost_usd']:,.0f}",
             (p["cost_usd"], p["bound_pp"]),
             textcoords="offset points",
             xytext=label_offsets.get(p["label"], (0, 26)), ha="center",
@@ -574,89 +519,34 @@ def render(data: dict, path: Path | str = PNG_PATH) -> Path:
         fontsize=11.5, color=VIOLET, linespacing=1.5, zorder=6,
     )
 
-    # --- what is deliberately not drawn --------------------------------------
-    off = data["off_lane"]
-    ax.text(
-        0.995, 0.035,
-        f"NOT DRAWN: the {'/'.join(off['family'])} lane ({off['n_runs']} runs, "
-        f"{off['gross_share']:.1%} of est. tokens) is refused at the family gate, and "
-        f"under this sheet all {off['n_arms']} of its arms price identically,\n"
-        "so no single-arm policy there moves the bill. Those points are computed and "
-        "kept in results/frontier.csv with plotted=False.",
-        transform=ax.transAxes, ha="right", va="bottom", fontsize=10,
-        color=MUTED, linespacing=1.6, zorder=6,
-    )
-
-    # --- the ghost tick ------------------------------------------------------
-    for target in (ax, rug):
-        target.axvline(data["naive_usd"], color=GHOST, lw=1.5, ls=(0, (2, 3)),
-                       alpha=0.95, zorder=2)
-
     ax.set_ylabel(
-        "friction non-inferiority UPPER bound, pp above logged\n"
-        "PROCESS FRICTION, NOT ANSWER QUALITY",
+        "Maximum friction increase (percentage points)",
         fontsize=13, color=INK, labelpad=12,
     )
     ax.yaxis.set_major_formatter(matplotlib.ticker.FuncFormatter(
         lambda v, _p: "0" if abs(v) < 1e-9 else f"{v:+.0f}"
     ))
-    plt.setp(ax.get_xticklabels(), visible=False)
-
-    # --- the support-deficiency rug -----------------------------------------
-    _style_axes(rug)
-    rug_points = [p for p in data["single_arms"] if p["plotted"]] + named
-    deficits = [p["extrapolated_spend_share"] * 100.0 for p in rug_points]
-    rug.set_ylim(0, max(deficits) * 1.55)
-    rug.grid(True, axis="y", color=GRIDC, linewidth=1.0, zorder=0)
-    rug.set_axisbelow(True)
-    for p in rug_points:
-        x = p["cost_usd"]
-        rug.bar(x, p["extrapolated_spend_share"] * 100.0, width=x * 0.075,
-                color="white", edgecolor=VIOLET, hatch="////", linewidth=1.2,
-                zorder=3)
-    rug.set_ylabel("support deficit\n(% of est. spend)", fontsize=10.5,
-                   color=INK, labelpad=12)
-    rug.text(
-        0.5, 0.93,
-        "hatched, its own scale — share of est. spend whose target arm was never "
-        "observed in its stratum. A dimensionless fraction of dollars, NOT a "
-        "confidence interval.",
-        transform=rug.transAxes, ha="center", va="top", fontsize=10,
-        color=MUTED, zorder=6,
-    )
 
     ticks = [50, 100, 200, 400, 700]
-    rug.set_xticks(sorted(ticks + [data["naive_usd"]]))
-    rug.xaxis.set_major_formatter(
+    ax.set_xticks(ticks)
+    ax.xaxis.set_major_formatter(
         matplotlib.ticker.FuncFormatter(lambda v, _p: f"${v:,.0f}")
     )
-    rug.xaxis.set_minor_locator(matplotlib.ticker.NullLocator())
-    for tick_label in rug.get_xticklabels():
-        if tick_label.get_position()[0] == data["naive_usd"]:
-            tick_label.set_color(GHOST)
-            tick_label.set_fontstyle("italic")
-    rug.set_xlabel(
-        "re-metered cache-aware spend, est. USD (log scale)  ·  "
-        f"sheet = {data['sheet']}, ASSUMED  ·  input-side only\n"
-        f"the grey ghost tick at ${data['naive_usd']:,.0f} is what the starter kit "
-        f"counts: flat per-item tokens, no cache split — {data['token_ratio']:.2f}x "
-        f"fewer tokens, but only {data['dollar_ratio']:.2f}x fewer dollars",
-        fontsize=12, color=INK, labelpad=10, linespacing=1.7,
+    ax.xaxis.set_minor_locator(matplotlib.ticker.NullLocator())
+    ax.set_xlabel(
+        "Estimated spend (USD, log scale)",
+        fontsize=12, color=INK, labelpad=10,
     )
 
     # --- titles and the caveats that travel with every number ----------------
     fig.text(
         0.078, 0.982,
-        "What moving spend off the logged arms could cost you, at worst",
+        "Frontier of estimated spend vs. upper bound on process friction",
         fontsize=23, color=INK, fontweight="bold", ha="left", va="top",
     )
     fig.text(
         0.078, 0.936,
-        "n = 1000 trajectories. Every marker is a 95% ONE-SIDED UPPER BOUND on the "
-        "spend-weighted process-friction increase over the logged policy, never a point\n"
-        "estimate (MDE is 11.4 pp on the best-powered arm pair). Whiskers are 95% "
-        "job-clustered bootstrap CIs on the IDENTIFIED part only; each marker adds the\n"
-        "Manski widening for unsupported spend, so it sits above its own whisker.",
+        "n = 1000 tarjectories.",
         fontsize=11.5, color=MUTED, ha="left", va="top", linespacing=1.65,
     )
     verdict = "BELOW" if data["router_beats_hull"] else "ABOVE"
@@ -670,20 +560,20 @@ def render(data: dict, path: Path | str = PNG_PATH) -> Path:
         linespacing=1.5,
     )
     fig.text(
-        0.078, 0.030, TOKEN_BASIS + "\n" + SHEET_BASIS,
+        0.078, 0.030,
+        "Costs are estimated, input-only, and based on assumed prices.",
         fontsize=9.5, color=MUTED, ha="left", va="center", linespacing=1.6,
     )
 
     handles = [
         plt.Line2D([], [], color=VIOLET, lw=2.4, ls=(0, (7, 4)),
-                   label="mixture frontier over the admissible in-lane "
-                         "single-arm policies"),
+                   label="best simple-policy mix"),
         plt.Line2D([], [], marker="o", ls="none", ms=10, mfc="white",
-                   mec=VIOLET, mew=2.0, label="admissible in-lane single-arm policy"),
+                   mec=VIOLET, mew=2.0, label="simple policy"),
         plt.Line2D([], [], marker="D", ls="none", ms=11, mfc=VIOLET,
-                   mec="white", mew=1.4, label="named operating point"),
+                   mec="white", mew=1.4, label="compared policy"),
         plt.Line2D([], [], marker="*", ls="none", ms=18, mfc=PEACH, mec=INK,
-                   mew=1.2, label="logged policy, as served"),
+                   mew=1.2, label="current policy"),
     ]
     fig.legend(
         handles=handles, loc="lower center", bbox_to_anchor=(0.526, 0.072),
