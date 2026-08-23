@@ -734,3 +734,55 @@ fails 11 of the 19 tests, and turning off the empty-output check in `backlog_sca
 `make test` 159 OK (was 140), `make all` green (301 claims), `router.gates` GREEN 4 pass / 2 warn /
 0 fail, `router.verify` PASS on 44 numerals. No claim value moved: this is loop infrastructure and
 quotes no export number.
+---
+
+## ADR-020 — What the prose gate scans is what a reader sees, and where it stops reading it says so
+
+**Status:** Accepted (turn 14) · **Supersedes nothing** · **Backlog:** i0025
+
+**Context.** `router.verify` (ADR-009) is what makes "every number in a user-facing artifact
+exists in the claims table under a stable key" an enforced contract rather than an assertion.
+Its whole correctness rests on one function: `prose()`, which reduces an artifact to the text a
+reader actually sees. Three ways it did not, each reproduced against the shipped module before
+anything was written:
+
+1. `_FENCE_RE` matched only a **closed** fence pair. The HTML side already had an
+   open-`<script>`-at-EOF fallback; markdown had none, so a dropped closing ``` spilled the
+   fenced command into the scanned prose. `prose("…\n```bash\nrun --threshold 999\n")` left
+   `999` behind, and 28 claims carry small-int values 0..12, so a shell flag can mis-bind as
+   easily as it can orphan.
+2. `_TAG_RE` was `<[^>]+>`, which closes at the **first** `>` — including one inside a quoted
+   attribute value. `<div title="revenue 5 > 2 loss">only 7 remains</div>` left a `2` in the
+   scanned prose that no reader ever sees.
+3. The `%` that licenses reading a numeral as a percent rendering of a fraction claim was found
+   by slicing a fixed two characters after the literal. Two spaces before the sign silently
+   disabled the fraction path, so a legitimate percent reported as an orphan.
+
+**Decision.**
+
+- The tag rule is quote-aware: `<(?:[^>"']|"[^"]*"|'[^']*')*>`. The three alternatives are
+  disjoint on their first character, so the engine has nothing to backtrack over and the match
+  stays linear — this is a correctness fix, not a pattern that can blow up on a long line.
+- An unclosed fence is blanked to end of file, mirroring `_OPEN_SCRIPTISH_RE`.
+- The percent lookahead scans to the next non-space. **Only whitespace may sit between** the
+  numeral and the sign. That restriction is the load-bearing half: widening it further would let
+  the tolerance bind numerals that are not shares at all, and the gate would quietly stop finding
+  orphans. There is a test for exactly that direction.
+
+**The one judgement call, and why it went the way it did.** Blanking a dangling fence to EOF is
+the conservative read of a malformed document, but it can also *hide* a real numeral written
+after the bad fence — a fail turned into a quiet pass, which is the failure mode this whole
+family of ADRs exists to refuse. So `run()` also records the line, and `print_report` prints
+`WARNING - <file>:<line> unclosed ``` fence -- everything after it was ignored`. It is a warning
+and not a failure because a dropped ``` still renders as a page a human reads, whereas an
+unclosed `<script>` is a browser-visible breakage nobody can miss. Escalating it to BLOCKED
+belongs with the `Report.missing` machinery of ADR-018 once that branch lands, and is filed as
+backlog rather than done here.
+
+**Consequence, measured rather than argued.** All three defects are **latent** against the five
+shipped artifacts today, and that is asserted, not claimed in a note: substituting the
+quote-aware tag rule changes **0 lines** across all four HTML artifacts (a test in
+`tests/test_verify.py` re-measures this on every run), and `README.md` carries 0 unclosed and 0
+indented fences. Old parser and new produce the **identical** result on the shipped tree — 44
+bindings, 0 orphans, 0 warnings. So this buys nothing today and everything tomorrow: these fire
+the first time a human edits the deck or the README, which is the morning of the defense.
