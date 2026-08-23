@@ -481,6 +481,10 @@
       {
         "turn": 11,
         "text": "IMPLEMENTED on idea/verify-prose-stripper (d9f4201). ADR-020. All three defects reproduced first, red watched: 4 failures plus 1 error against the pre-fix module, 24 tests green after. (1) UNCLOSED FENCE: _FENCE_RE matched only a closed pair, so a dropped closing fence left the fenced command in the scanned prose -- blanked to EOF now, mirroring the open-<script> fallback the HTML path already carried. (2) TAG: <[^>]+> closes at the first > including one inside a quoted attribute value; the rule is quote-aware now and its three alternatives are disjoint on their first character, so it stays linear rather than swapping a correctness bug for backtracking. (3) PERCENT: the lookahead sliced a fixed 2 characters, so two spaces before the sign silently disabled the fraction path; it scans to the next non-space now. THE RESTRICTION IS THE LOAD-BEARING HALF and has its own test in the opposite direction -- only whitespace may sit between the numeral and the sign, or the tolerance starts binding numerals that are not shares and the gate quietly stops finding orphans. ONE JUDGEMENT CALL BEYOND THE BRIEF: blanking a dangling fence to EOF can HIDE a real numeral written after it, turning a fail into a quiet pass, which is the failure mode this family of fixes exists to refuse. So run() records the line and print_report emits 'WARNING - <file>:<line> unclosed fence'. Warning and not failure because a dropped fence still renders as a page a human reads, whereas an unclosed <script> is a browser-visible breakage; escalating it to BLOCKED belongs with ADR-018's Report.missing machinery and is filed as i0028 rather than done here. LATENCY MEASURED, NOT ASSUMED: substituting the quote-aware tag rule changes 0 lines across all four HTML artifacts and README.md carries 0 unclosed and 0 indented fences, so old parser and new give the IDENTICAL result on the shipped tree -- 44 bindings, 0 orphans, 0 warnings. A test re-measures the tag half on every run, so 'this is hardening' cannot rot into a false claim. GATE: make test 153 OK (main is 140), make all green (301 claims, AUPRC still 0.4159785566844733), router.gates GREEN 4 pass / 2 warn / 0 fail, router.verify PASS 44 numerals across 5 artifacts exit 0, tests.test_data_safety 21 OK. No claims key touched, so no number-verifier; no feature or join touched, so no leak-hunter."
+      },
+      {
+        "turn": 11,
+        "text": "MERGE COORDINATION, two items. (1) ID COLLISION: the follow-up this turn filed came out as i0027, and idea/integrate-turn12 already has a different i0027 (the turn-11/12 integration). Renumber THIS branch's i0027 -- the unclosed-fence-should-BLOCK entry -- when unioning backlog.json; see the note on it. (2) FILE CONFLICT, expected and small: idea/integrate-turn12 carries ADR-018 / i0019, which edits router/verify.py's ARTIFACTS tuple (a fourth 'required' field), Report.ok, run() and main(). This branch edits _TAG_RE, _FENCE_RE, prose(), a new unclosed_fences(), the percent lookahead inside scan_artifact, one added Report field (warnings) and one added line in run(). The regions are disjoint except run() and the Report field list, so TAKE BOTH SIDES rather than picking one -- the two fixes are complementary and neither subsumes the other. ADR numbering needs no renumber: integrate-turn12 holds 015..019 and this is 020, checked against that branch before writing. docs/DECISIONS.md, docs/IDEAS.md and loop/JOURNAL.md will conflict as usual and are unions."
       }
     ]
   },
@@ -507,6 +511,11 @@
     "status": "proposed",
     "branch": null,
     "created_turn": 11,
-    "notes": []
+    "notes": [
+      {
+        "turn": 11,
+        "text": "ID COLLISION, READ BEFORE MERGING. This entry was minted as i0027 by backlog.py add on a branch cut from main, and main's backlog stops at i0026 -- but idea/integrate-turn12 already holds a DIFFERENT i0027, 'Integrate the four parallel turn-11/12 branches into one merge candidate'. The CLI has no rename and loop/state/*.json must not be hand-edited, so the collision is recorded rather than papered over. THE MERGE TURN MUST renumber THIS entry (the unclosed-fence one) to the next free id when it unions backlog.json, and keep the integration entry as i0027 -- that one is referenced by name in the turn-12 journal entries and in the note on i0017, this one is referenced nowhere but here and in the note on i0025. The two titles are unmistakably different, so the union cannot merge them by accident."
+      }
+    ]
   }
 ]
