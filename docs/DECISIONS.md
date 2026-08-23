@@ -414,3 +414,54 @@ deferral clause is what makes the trade one-sided. Over the full grid `DECK_EVER
 **Consequence.** `tests/test_backlog_plan.py` (14 tests) pins both halves — review is never
 missed, and the deck is never starved by the rule that protects review. The bound is asserted
 across the whole grid, not just the five pairs that happened to be tried.
+
+---
+
+## ADR-014 — A difference of two one-sided upper bounds is not a gap, and nothing may print it as one
+
+**Status:** Accepted
+
+**Decision.** `router.ope.non_inferiority_bound` returns `(None, None, hi, diag)` — a ONE-SIDED
+UPPER bound and nothing else. Both legs of the frontier comparison are built from it, so
+`upper(router) - upper(mixture)` bounds the true difference in neither direction. Three
+consequences, all now enforced in code rather than in a reviewer's memory:
+
+1. The claims key is named for the arithmetic it holds:
+   `frontier.gated_router.upper_bound_minus_hull_upper_bound_pp`. It was
+   `frontier.gated_router.gap_above_hull_pp`, which invited every reader to quote it as the gap.
+   The value is unchanged; only the name is, so no prose can quote it without the key name
+   contradicting the sentence.
+2. `results/NUMBERS.md` #5 states both levels and then says **do not subtract them**. The chart
+   annotation does the same: the double-headed arrow is labelled with the two bounds, not with
+   the distance between them.
+3. Neither `presentation.html` nor the chart quotes the difference anywhere.
+
+**What replaces it — the arithmetic ceiling.** The identified delta is
+`sum(W * 1[switched] * (m - y))` with `m, y` in `[0, 1]` and spend weights summing to 1, so its
+magnitude cannot exceed the share of spend the policy moves. The gated router moves
+`ope.routed.switched.spend_share` = 3.6% of est. spend, and the hull at matched spend sits at
+-3.83 pp. No policy at this tau can reach that hull however well it routes. This is both true and
+strictly stronger than the discarded claim: it reframes the negative result from "our routing rule
+is bad" to "we set tau too conservatively for the frontier test to be informative", which is a
+statement about a knob we chose rather than about a rule the data rejected.
+
+`policy_point` now carries `switched_spend_share` on every plotted point, and it is a column of
+`results/frontier.csv`, so the ceiling is a property of each point rather than a sentence about
+one of them. Cross-check: the value computed there (0.035888) equals
+`ope.routed.switched.spend_share` computed on the independent OPE path.
+
+**Also corrected.** The comparator at the router's spend is not "one cheap arm". The hull is
+non-decreasing and convex over the admissible single-arm policies, so a hull value strictly
+between two vertices is an interpolation — that is, a RANDOMISATION. At $375.45 it lies between
+`claude-sonnet-5` ($172.47) and `claude-opus-5` ($686.55), so the thing the router loses to is a
+mixture with substantial weight on the most expensive policy on the chart.
+
+**What was NOT done, deliberately.** No real gap number was produced. Getting one requires a joint
+job-clustered bootstrap with both policies evaluated inside the same replicate, emitted through
+`router/report.py` under its own key. Pasting a number computed in a scratch session would
+reintroduce exactly the defect this ADR closes. Until that exists, the project quotes no gap.
+
+**Do not** reach for "4.59 pp is below the 11.4 pp MDE, so it is not significant."
+`refusal.mde_best_powered_arm_pair.pp` is an unweighted arm-pair rate contrast — a different
+estimand on a different weighting. Asserting it would replace one untraceable comparison with
+another.
