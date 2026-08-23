@@ -1,0 +1,6 @@
+policy,stochastic,reachable_fraction,n_unreachable_cells
+logged,False,0.6180555555555556,63
+cheapest,False,0.125,126
+strongest,False,0.125,126
+method3_cascade,False,0.2777777777777778,104
+method5_adaptive,True,1.0,0

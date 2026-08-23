@@ -1,0 +1,9 @@
+{
+  "floor": 0.02,
+  "ceiling": 0.1,
+  "softening": 0.05,
+  "temperature": 0.02,
+  "minimum_support": 3.0,
+  "sample_seed": 20260823,
+  "label_budget": 40
+}

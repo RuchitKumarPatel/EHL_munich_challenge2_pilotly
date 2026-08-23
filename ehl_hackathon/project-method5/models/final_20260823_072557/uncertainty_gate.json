@@ -1,0 +1,6 @@
+{
+  "floor": 0.02,
+  "ceiling": 0.3,
+  "softening": 0.05,
+  "reference_ratio": 4.085822393403734
+}

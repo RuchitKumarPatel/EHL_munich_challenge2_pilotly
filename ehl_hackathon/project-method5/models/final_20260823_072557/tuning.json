@@ -1,0 +1,110 @@
+{
+  "logged_cost": 0.0018506783600000002,
+  "floor": 0.02,
+  "selected": {
+    "ceiling": 0.1,
+    "temperature": 0.02,
+    "quality": 0.8245615460647688,
+    "cost": 0.0008634876500000001,
+    "mean_epsilon": 0.04802586240396253,
+    "within_logged_budget": true
+  },
+  "grid": [
+    {
+      "ceiling": 0.1,
+      "temperature": 0.02,
+      "quality": 0.8245615460647688,
+      "cost": 0.0008634876500000001,
+      "mean_epsilon": 0.04802586240396253,
+      "within_logged_budget": true
+    },
+    {
+      "ceiling": 0.1,
+      "temperature": 0.05,
+      "quality": 0.820324007547686,
+      "cost": 0.0008377566900000001,
+      "mean_epsilon": 0.04802586240396253,
+      "within_logged_budget": true
+    },
+    {
+      "ceiling": 0.1,
+      "temperature": 0.15,
+      "quality": 0.8005552062334678,
+      "cost": 0.00065018757,
+      "mean_epsilon": 0.04802586240396253,
+      "within_logged_budget": true
+    },
+    {
+      "ceiling": 0.2,
+      "temperature": 0.02,
+      "quality": 0.8228965262816647,
+      "cost": 0.0008231324700000001,
+      "mean_epsilon": 0.08305819040891571,
+      "within_logged_budget": true
+    },
+    {
+      "ceiling": 0.2,
+      "temperature": 0.05,
+      "quality": 0.8177149104078113,
+      "cost": 0.0008181202900000001,
+      "mean_epsilon": 0.08305819040891571,
+      "within_logged_budget": true
+    },
+    {
+      "ceiling": 0.2,
+      "temperature": 0.15,
+      "quality": 0.8004289394955085,
+      "cost": 0.0006345873,
+      "mean_epsilon": 0.08305819040891571,
+      "within_logged_budget": true
+    },
+    {
+      "ceiling": 0.3,
+      "temperature": 0.02,
+      "quality": 0.8224507962790181,
+      "cost": 0.0008384910400000001,
+      "mean_epsilon": 0.11809051841386885,
+      "within_logged_budget": true
+    },
+    {
+      "ceiling": 0.3,
+      "temperature": 0.05,
+      "quality": 0.8178649736505612,
+      "cost": 0.0008249508400000001,
+      "mean_epsilon": 0.11809051841386885,
+      "within_logged_budget": true
+    },
+    {
+      "ceiling": 0.3,
+      "temperature": 0.15,
+      "quality": 0.802636103056508,
+      "cost": 0.0007589332,
+      "mean_epsilon": 0.11809051841386885,
+      "within_logged_budget": true
+    },
+    {
+      "ceiling": 0.45,
+      "temperature": 0.02,
+      "quality": 0.8185800779407358,
+      "cost": 0.0009745861900000002,
+      "mean_epsilon": 0.1706390104212986,
+      "within_logged_budget": true
+    },
+    {
+      "ceiling": 0.45,
+      "temperature": 0.05,
+      "quality": 0.8179344515845035,
+      "cost": 0.0009525863,
+      "mean_epsilon": 0.1706390104212986,
+      "within_logged_budget": true
+    },
+    {
+      "ceiling": 0.45,
+      "temperature": 0.15,
+      "quality": 0.8015194507465021,
+      "cost": 0.00075995496,
+      "mean_epsilon": 0.1706390104212986,
+      "within_logged_budget": true
+    }
+  ]
+}
