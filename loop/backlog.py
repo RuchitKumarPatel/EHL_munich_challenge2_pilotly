@@ -13,6 +13,8 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
+import sys
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
@@ -22,6 +24,9 @@ STATE_DIR = ROOT / "loop" / "state"
 BACKLOG = STATE_DIR / "backlog.json"
 STATE = STATE_DIR / "state.json"
 IDEAS_MD = ROOT / "docs" / "IDEAS.md"
+
+# Ids are ordered by `next_id`, so an id it cannot order is an id it can reissue.
+_ID_RE = re.compile(r"^i\d+$")
 
 # Status lifecycle. `blocked` is terminal for the night: a human unblocks it.
 STATUSES = (
@@ -54,16 +59,94 @@ def _write_json(path: Path, payload) -> None:
         raise
 
 
+class StateError(RuntimeError):
+    """A state file exists but cannot be trusted. Never a default, never silent.
+
+    Both files under loop/state/ are rewritten by every turn agent, which runs
+    with bypassPermissions. The supervisor captures this CLI's stdout by command
+    substitution and used to ignore the exit code, so a traceback here became an
+    empty TURN and an empty TYPE and the loop stopped reporting "unknown turn
+    type ''" -- the wrong cause for the right failure. Raising a named error and
+    exiting EXIT_STATE_UNREADABLE lets run.sh print what actually happened.
+    """
+
+
+EXIT_STATE_UNREADABLE = 3   # distinct from argparse's 2 and from a plain failure
+
+
+def _load_json(path: Path, what: str):
+    """Parse `path`, or raise StateError naming the file and the position."""
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise StateError(f"cannot read the {what} file {path}: {exc}") from None
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise StateError(
+            f"{path} is not valid JSON ({exc.msg} at line {exc.lineno} "
+            f"column {exc.colno}). The {what} is left untouched; fix or restore "
+            f"the file by hand -- this CLI will not guess at it."
+        ) from None
+
+
+def _check_backlog(items) -> list[dict]:
+    """Every field the rest of this module indexes without a `.get`.
+
+    Validated once, here, so no caller has to be defensive and no malformed item
+    can reach `_by_status` (which indexed `i["status"]`), `next_id` (which
+    swallowed a non-numeric id and could then hand out one already in use) or
+    `render_ideas`.
+    """
+    if not isinstance(items, list):
+        raise StateError(
+            f"{BACKLOG} must hold a JSON list of ideas, found "
+            f"{type(items).__name__}")
+    seen = set()
+    for pos, it in enumerate(items):
+        where = f"{BACKLOG} item {pos}"
+        if not isinstance(it, dict):
+            raise StateError(f"{where} is a {type(it).__name__}, not an object")
+        ident = it.get("id")
+        if not isinstance(ident, str) or not _ID_RE.match(ident):
+            raise StateError(
+                f"{where} has id {ident!r}; every id must look like i0001. "
+                f"An id this module cannot order is an id `add` could hand out "
+                f"twice.")
+        if ident in seen:
+            raise StateError(f"{where}: duplicate id {ident}")
+        seen.add(ident)
+        status = it.get("status")
+        if status not in STATUSES:
+            raise StateError(
+                f"{ident} has status {status!r}, which is not one of "
+                f"{', '.join(STATUSES)}")
+        if not isinstance(it.get("title"), str):
+            raise StateError(f"{ident} has no title")
+        if not isinstance(it.get("notes", []), list):
+            raise StateError(f"{ident} has notes that are not a list")
+    return items
+
+
 def load_backlog() -> list[dict]:
     if not BACKLOG.exists():
         return []
-    return json.loads(BACKLOG.read_text(encoding="utf-8"))
+    return _check_backlog(_load_json(BACKLOG, "backlog"))
 
 
 def load_state() -> dict:
+    # ABSENT IS NOT CORRUPT. The first turn of a night has no state file, so a
+    # missing file defaults. A file that exists and does not parse must NOT --
+    # defaulting it would set cost_usd to 0, and stop_reason reads exactly that
+    # field to enforce the effort ceiling, so one corrupt file would buy the
+    # loop an unlimited budget. See tests/test_backlog_state.py.
     if not STATE.exists():
         return {"turn": 0, "cost_usd": 0.0, "last_turn_type": None, "started": None}
-    return json.loads(STATE.read_text(encoding="utf-8"))
+    state = _load_json(STATE, "state")
+    if not isinstance(state, dict):
+        raise StateError(
+            f"{STATE} must hold a JSON object, found {type(state).__name__}")
+    return state
 
 
 def save_backlog(items: list[dict]) -> None:
@@ -151,12 +234,14 @@ def plan_turn(items: list[dict], turn: int, deck_every: int, review_every: int =
 
 
 def next_id(items: list[dict]) -> str:
-    n = 0
-    for i in items:
-        try:
-            n = max(n, int(i["id"].lstrip("i")))
-        except ValueError:
-            continue
+    """One past the highest id present.
+
+    No `try/continue` here any more: an id this cannot order used to be skipped,
+    and the next id was then i0001 -- the id such a file is most likely to
+    already hold. `_check_backlog` rejects the file instead, so by the time we
+    get here every id matches `_ID_RE`.
+    """
+    n = max((int(i["id"][1:]) for i in items), default=0)
     return f"i{n + 1:04d}"
 
 
@@ -351,7 +436,13 @@ def main() -> int:
     sp.set_defaults(func=cmd_stats)
 
     args = p.parse_args()
-    return args.func(args)
+    try:
+        return args.func(args)
+    except StateError as exc:
+        # Stderr, and NOTHING on stdout: run.sh captures stdout as a scalar and
+        # cannot tell an empty answer from an absent one. See ADR-019.
+        print(f"backlog.py: {exc}", file=sys.stderr)
+        return EXIT_STATE_UNREADABLE
 
 
 if __name__ == "__main__":

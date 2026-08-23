@@ -163,6 +163,16 @@ input throughout — every `python -c` in `run.sh` is single-quoted and takes it
 argv, and `tests/test_supervisor_input.py` fails the build if one is written any other way.
 See ADR-012.
 
+An eighth, added for the same reason: either file under `loop/state/` failing to **parse**.
+`backlog.py` refuses an unreadable or malformed file — exit `3`, a sentence on stderr, nothing on
+stdout, and the file left exactly as found — and `run.sh` captures it only through
+`backlog_scalar`, which checks the exit code and refuses an empty answer. Before that, a corrupt
+file became `TYPE=""` and the night ended reporting `unknown turn type ''`, which is the right
+failure under the wrong name. Note what is deliberately *not* done: a corrupt `state.json` is
+never defaulted, because defaulting it would zero `cost_usd` and hand the loop an unlimited
+budget. Absent is not corrupt — a missing file still defaults, since the first turn of a night
+has none. See ADR-019.
+
 ## Ultracode
 
 `ULTRACODE_<TURNTYPE>=1` in `loop/config.env` makes that turn type author and run a multi-agent
