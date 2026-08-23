@@ -241,3 +241,44 @@ against an MDE of 8.2pp, so the sampling noise of any selection signal exceeds t
 router therefore stays what it is on `main` — rank by predicted spend, take top-k, target
 `claude-sonnet-5` — and no model-class change is pending. Reproduction notes, the mirror workaround
 for the blocked `huggingface.co`, and the measured CPU costs are in `router/textclf/README.md`.
+
+## ADR-009 — The prose gate finds orphans, and does not pretend to find wrong keys
+
+**Status:** Accepted
+
+*(ADR-008 is the text-classifier negative result, which is still on `text-classifier-finetune`.
+This one is numbered 009 so the two do not collide when that branch merges.)*
+
+**Decision.** `python -m router.verify` enforces the "every quoted number is in `claims.json`"
+contract on the five git-tracked user-facing artifacts. It reports ORPHANS — numerals no claim
+has the value of — and it deliberately does not assert that a bound numeral is bound to the
+RIGHT key.
+
+**Why the weaker claim.** "Resolve every numeric literal to a claims key" sounds stronger and is
+in fact vacuous. 28 claims carry small-int values 0..12 (`corpus.n_arms` = 9, `model.cv.folds` =
+5, `basis.chars_per_token` = 4, ...), so README step numbers and a `[0, 1]` range in the deck all
+"resolve" by coincidence while carrying no claim at all. Value matching cannot separate a claim
+numeral from a structural one, so the gate does not claim it can. Measured while building it:
+perturbing the console's MDE from `11,4` to `11,7` is NOT caught, because 11.7 happens to be
+`recon.turns.per_line.claude-fable-5`. The negative control in `tests/test_verify.py` uses `11,9`
+and says why in a comment.
+
+**The two parser rules, both load-bearing.** (a) LOCALE IS DECLARED, never sniffed:
+`router/console.html` is German, so `11,4` there is 11.4 (`refusal.mde_best_powered_arm_pair.pp`)
+while `10,845` in the English deck is 10845 (`recon.turns.total`). A single heuristic over the
+digits would have to get one of them wrong. (b) PERCENT: shares live in `claims.json` as
+fractions and are quoted as percents, so a numeral followed by `%` may also bind to claim/100 —
+`41.0%` is `policy.refused.gross_share` = 0.4098. Only when followed by `%`, or the tolerance
+would be loose enough to bind anything. A literal binds when it is a correct rounding of the
+claim at the precision it was written with.
+
+**Scope.** Prose only. `<script>` and `<style>` bodies, HTML comments, fenced code blocks and
+inline code spans are blanked before extraction — they hold chart geometry, row data and shell
+commands, and every literal in them that matched a claim matched a coincidental 0, 1 or 2.
+Structural numerals that survive that (the hackathon dates, `Python 3.10+`, panel numbers, gate
+ordinals, the 95% level) live in a capped `NOT_A_CLAIM` allowlist, one justification each, in the
+idiom `tests/test_data_safety.py` already uses for documentary placeholders.
+
+**Consequence.** `make test` is the gate (`tests/test_verify.py`); `make verify` is the readable
+report of what bound to what. It is deliberately NOT part of `make all` — `all` rebuilds the
+claims table, and a deck half-way through an edit would wedge the pipeline for the wrong reason.
