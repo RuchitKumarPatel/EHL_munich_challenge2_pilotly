@@ -30,48 +30,97 @@ DEADLINE_EPOCH=$(( START_EPOCH + LOOP_HOURS * 3600 ))
 
 log() { printf '[%s] %s\n' "$(date '+%H:%M:%S')" "$*"; }
 
-state_field() { "$PY" -c "import json;print(json.load(open('$STATEFILE')).get('$1',$2))" 2>/dev/null || echo "$2"; }
+# --- reading state -------------------------------------------------------------------------
+#
+# EVERY read below treats its file as UNTRUSTED INPUT, and that is not paranoia about the
+# outside world: loop/state/state.json is rewritten by each turn agent, which runs with
+# bypassPermissions, while this supervisor is the one process in the project that sits outside
+# every tool-permission boundary. Interpolating a field of that file into a `python -c` source
+# string -- which is what the budget check did until ADR-012 -- hands a turn arbitrary code in
+# the supervisor, re-executed by stop_reason at the top of every later iteration.
+#
+# So: the -c argument is always SINGLE-quoted, so the shell cannot splice anything into it, and
+# every value travels as argv. tests/test_supervisor_input.py greps for the double-quoted form.
+
+state_field() {   # $1 = key, $2 = default. Raw value, for display only.
+  "$PY" -c '
+import json, sys
+path, key, default = sys.argv[1:4]
+try:
+    print(json.load(open(path)).get(key, default))
+except Exception:
+    print(default)
+' "$STATEFILE" "$1" "$2" 2>/dev/null || echo "$2"
+}
+
+state_int() {   # $1 = key, $2 = default. Guaranteed an integer, or the default.
+  # Every caller feeds a `[ -ge ]`, and that comparison ERRORS on a non-integer -- which reads
+  # as "do not stop" and silently switches the guard off. The coercion belongs here, once.
+  "$PY" -c '
+import json, sys
+path, key, default = sys.argv[1:4]
+try:
+    print(int(float(json.load(open(path))[key])))
+except Exception:
+    print(int(float(default)))
+' "$STATEFILE" "$1" "$2" 2>/dev/null || echo "$2"
+}
+
+# Exit 0 = at or over the ceiling, 1 = under it, 2 = the state file yielded no number at all.
+# The caller stops the night on 2 as well: a supervisor that cannot read what it has spent has
+# no business spending more. Fail-closed, because the alternative failure is unbounded.
+budget_reached() {
+  "$PY" -c '
+import json, sys
+try:
+    spent = float(json.load(open(sys.argv[1]))["cost_usd"])
+    ceiling = float(sys.argv[2])
+except Exception:
+    raise SystemExit(2)
+raise SystemExit(0 if spent >= ceiling else 1)
+' "$STATEFILE" "$LOOP_BUDGET_USD" 2>/dev/null
+}
 
 # This account runs on an OAuth subscription with extra usage disabled, so hitting the limit is
 # a hard stop, not an overage charge. The CLI keeps its own utilization snapshot and refreshes
 # it on every call, which makes it the cheapest available read on where we stand.
 usage_pct() {   # $1 = five_hour | seven_day
-  "$PY" -c "
-import json,os
+  "$PY" -c '
+import json, os, sys
 try:
-    d=json.load(open(os.path.expanduser('~/.claude.json')))
-    w=((d.get('cachedUsageUtilization') or {}).get('utilization') or {}).get('$1') or {}
-    print(int(w.get('utilization') or 0))
+    d = json.load(open(os.path.expanduser("~/.claude.json")))
+    w = ((d.get("cachedUsageUtilization") or {}).get("utilization") or {}).get(sys.argv[1]) or {}
+    print(int(w.get("utilization") or 0))
 except Exception:
     print(0)
-" 2>/dev/null || echo 0
+' "$1" 2>/dev/null || echo 0
 }
 
 quota_reset_epoch() {
-  "$PY" -c "
-import json,os,datetime
+  "$PY" -c '
+import json, os, datetime
 try:
-    d=json.load(open(os.path.expanduser('~/.claude.json')))
-    w=((d.get('cachedUsageUtilization') or {}).get('utilization') or {}).get('five_hour') or {}
-    r=w.get('resets_at')
+    d = json.load(open(os.path.expanduser("~/.claude.json")))
+    w = ((d.get("cachedUsageUtilization") or {}).get("utilization") or {}).get("five_hour") or {}
+    r = w.get("resets_at")
     print(int(datetime.datetime.fromisoformat(r).timestamp()) if r else 0)
 except Exception:
     print(0)
-" 2>/dev/null || echo 0
+' 2>/dev/null || echo 0
 }
 
 # A turn's own result text can mention rate limits without having hit one, so the failure has to
 # come first: only a run that actually errored is a candidate.
 is_rate_limited() {   # $1 = result json, $2 = stderr
   local failed
-  failed=$("$PY" -c "
-import json
+  failed=$("$PY" -c '
+import json, sys
 try:
-    d=json.load(open('$1'))
-    print('1' if d.get('is_error') or d.get('subtype') != 'success' else '0')
+    d = json.load(open(sys.argv[1]))
+    print("1" if d.get("is_error") or d.get("subtype") != "success" else "0")
 except Exception:
-    print('1')
-" 2>/dev/null || echo 1)
+    print("1")
+' "$1" 2>/dev/null || echo 1)
   [ "$failed" = "1" ] || return 1
   grep -qiE 'usage limit|rate limit|limit reached|quota exceeded|429' "$1" "$2" 2>/dev/null
 }
@@ -186,13 +235,17 @@ push_all_branches() {
 stop_reason() {
   if [ -f "$STOPFILE" ]; then echo "kill switch $STOPFILE"; return 0; fi
   if [ "$(date +%s)" -ge "$DEADLINE_EPOCH" ]; then echo "wall clock ($LOOP_HOURS h)"; return 0; fi
-  local turn spent
-  turn=$(state_field turn 0)
+  local turn spent budget_rc
+  turn=$(state_int turn 0)
   if [ "$turn" -ge "$LOOP_MAX_TURNS" ]; then echo "max turns ($LOOP_MAX_TURNS)"; return 0; fi
-  spent=$(state_field cost_usd 0)
-  if "$PY" -c "import sys;sys.exit(0 if float('$spent') >= float('$LOOP_BUDGET_USD') else 1)"; then
-    echo "effort ceiling (notional \$$spent >= \$$LOOP_BUDGET_USD)"; return 0
-  fi
+  budget_reached; budget_rc=$?
+  case "$budget_rc" in
+    # `spent` is only quoted back once budget_reached has confirmed it parses as a float, so
+    # nothing unparsed reaches the journal -- which is a tracked file.
+    0) spent=$(state_field cost_usd 0)
+       echo "effort ceiling (notional \$$spent >= \$$LOOP_BUDGET_USD)"; return 0 ;;
+    2) echo "unreadable cost_usd in $STATEFILE -- refusing to spend blind"; return 0 ;;
+  esac
   local week
   week=$(usage_pct seven_day)
   if [ "$week" -ge "$LOOP_MAX_SEVEN_DAY_PCT" ]; then
@@ -201,6 +254,10 @@ stop_reason() {
   fi
   return 1
 }
+
+# Sourcing this file gives you the helpers above without starting a night. Only
+# tests/test_supervisor_input.py sets this; running the script never does.
+[ "${LOOP_RUN_SOURCED:-0}" = "1" ] && return 0
 
 log "loop starting - deadline $(date -d "@$DEADLINE_EPOCH" '+%H:%M'), max $LOOP_MAX_TURNS turns, budget \$$LOOP_BUDGET_USD"
 [ -f "$JOURNAL" ] || printf '# JOURNAL - one line per loop turn\n\n' > "$JOURNAL"
@@ -278,13 +335,16 @@ while true; do
         < /dev/null > "$STEM.json" 2>"$STEM.err"
     RC=$?
 
-    COST=$("$PY" -c "
-import json
+    # The turn's own result json. Coerced to a float here rather than passed on as text: it
+    # goes straight into `backlog.py cost --add`, and from there into the state file that
+    # stop_reason reads back.
+    COST=$("$PY" -c '
+import json, sys
 try:
-    print(json.load(open('$STEM.json')).get('total_cost_usd') or 0.0)
+    print(float(json.load(open(sys.argv[1])).get("total_cost_usd") or 0.0))
 except Exception:
     print(0.0)
-" 2>/dev/null || echo 0.0)
+' "$STEM.json" 2>/dev/null || echo 0.0)
     "${BACKLOG[@]}" cost --add "$COST" >/dev/null
 
     if [ "$RC" -ne 0 ] && [ "$ATTEMPT" -lt 3 ] && is_rate_limited "$STEM.json" "$STEM.err"; then

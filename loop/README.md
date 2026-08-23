@@ -108,6 +108,13 @@ Whichever hits first, from `loop/config.env`: wall clock (`LOOP_HOURS`), turn co
 neither the queue nor any branch. Each turn also has its own `timeout` — INT first so the result
 json still gets flushed, SIGKILL 60s later — so a hung turn costs one slot rather than the night.
 
+A seventh condition is the one you hope never fires: `loop/state/state.json` not yielding a
+number for `cost_usd`. The supervisor stops rather than continue, because it cannot know what it
+has spent. That file is written by the turn agents, so the supervisor treats it as untrusted
+input throughout — every `python -c` in `run.sh` is single-quoted and takes its values from
+argv, and `tests/test_supervisor_input.py` fails the build if one is written any other way.
+See ADR-012.
+
 ## Ultracode
 
 `ULTRACODE_<TURNTYPE>=1` in `loop/config.env` makes that turn type author and run a multi-agent
