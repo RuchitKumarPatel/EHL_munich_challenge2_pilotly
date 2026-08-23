@@ -235,5 +235,20 @@
     "branch": null,
     "created_turn": 4,
     "notes": []
+  },
+  {
+    "id": "i0017",
+    "title": "Integrate the six parallel turn-6/turn-7 branches into one merge candidate",
+    "kind": "infra",
+    "why": "Six branches (text-classifier-finetune, idea/router-verify, idea/data-safety-detectors, idea/push-gate-per-ref, idea/supervisor-untrusted-state, idea/plan-turn-cadence) each carried an implemented idea, and each appended to docs/DECISIONS.md, docs/IDEAS.md and loop/JOURNAL.md. Two of them modified tests/test_data_safety.py independently and two modified loop/run.sh independently. The merge turn would have faced six conflicted merges on defense night. Success = one branch that contains all six with make test, make all and router.gates green.",
+    "status": "implemented",
+    "branch": "idea/integrate-turn7",
+    "created_turn": 7,
+    "notes": [
+      {
+        "turn": 7,
+        "text": "MERGE THIS ONE, NOT THE SIX. main's copy of the backlog is stale: i0001, i0004, i0005, i0008, i0009, i0010, i0011, i0012 and i0013 were all built by parallel turn-6/7 sessions and flagged implemented on their own branches, so main still shows them accepted with branch null and the merge turn would find nothing to merge. idea/integrate-turn7 contains all six branches. Verified on the integration branch: make test 140 OK (main is 82), make all green (301 claims), router.gates GREEN 4 pass / 2 warn / 0 fail, router.verify PASS on 41 numerals across 5 artifacts, and tests.test_data_safety green under DATA_SAFETY_SCAN_REF pointed at the branch itself. When loop/state/backlog.json conflicts on this merge, take the BRANCH side -- it already carries the correct implemented/branch flags for all nine plus this entry."
+      }
+    ]
   }
 ]
