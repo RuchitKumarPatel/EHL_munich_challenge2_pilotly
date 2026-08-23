@@ -67,6 +67,10 @@ a tracked file, which it removes on the spot.
 It scans the working tree once, and then scans **each branch against its own tree** before
 pushing that branch — a branch is not trusted because some other branch was clean when it was
 checked out. A branch that fails is skipped and named in the log; the clean ones still go.
+It also validates every branch **name** before that name becomes a git argument, and pushes the
+sha it scanned rather than re-resolving the name. `git update-ref` will happily create a branch
+called `--receive-pack=/tmp/x/pwn.sh`, and `git push` parses such a name as an option and runs
+the program — measured, not argued. ADR-017.
 
 This is not theoretical caution. On the loop's first night, `bootstrap.sh` pushed every branch
 before any check ran, and one of them carried a postmortem quoting three raw identifiers straight
@@ -82,10 +86,31 @@ cannot be taken back.
 - `loop/prompts/merge.md` and `loop/prompts/deck.md` push by hand. They are told to run the
   suite first, but that is an instruction to a model, not a gate.
 
-The suite catches the placeholder shapes (`PII_*_<n>`, `<ENTITY_*_<n>>`). Raw un-redacted ids are
-covered by backlog `i0005`; until that lands, the review turn greps for them by hand and
-`_common.md` tells every turn to `grep -c` any concrete-looking token against `export/` before
-writing it down.
+**What the suite detects, and what each detector's real limits are.**
+
+- Placeholder shapes — `PII_*_<n>` and `<ENTITY_*_<n>>`, with the serial attached by any
+  separator, not only an underscore. Anything not on a short, justified allowlist is red.
+- Presigned-URL credentials — the AWS SigV4 signature query parameter, in any tracked or
+  about-to-be-tracked file. The pattern lives in the suite and is deliberately not repeated
+  here; writing it into this file made the check red, which is the check working.
+- Verbatim runs of raw tool-output text in the generated artifacts, by 64-character shingle.
+- **Raw un-redacted identifiers**, which have no shape to match and are how three of them reached
+  a shared repository on night one. `RepoCarriesNoOpaqueExportToken` extracts every opaque-looking
+  token from every repo file and asks the export whether it knows it; a token the export knows
+  came from the export. This is the check backlog `i0005` added, and it has landed — the
+  instruction to grep for raw ids by hand is no longer the control. **Its one known limit is
+  live: the extractor requires 16 characters, and the three identifiers it was written for are 11,
+  so it would not have caught them.** Lowering the floor is backlog `i0018`. Until that lands,
+  `_common.md`'s rule still carries the weight: `grep -c` any concrete-looking token against
+  `export/`, counts only, before writing it into a file.
+
+**The scans fail closed.** A detector that cannot run is red, never green. `python -m unittest`
+exits 0 when every test skips, so an unresolvable ref, any git error, or a missing `export/` used
+to produce `OK (skipped=6)` and a branch pronounced clean having enumerated zero files. The suite
+now prints a receipt — how many files it enumerated, how many tests it ran, how many failed — and
+the gate refuses the branch unless the receipt agrees with the exit code. `DATA_SAFETY_STRICT=1`
+and `DATA_SAFETY_SCAN_REF` both select this behaviour; a developer running `make test` without the
+101 MB export still gets skips rather than failures.
 
 ## Branches
 
@@ -137,6 +162,16 @@ has spent. That file is written by the turn agents, so the supervisor treats it 
 input throughout — every `python -c` in `run.sh` is single-quoted and takes its values from
 argv, and `tests/test_supervisor_input.py` fails the build if one is written any other way.
 See ADR-012.
+
+An eighth, added for the same reason: either file under `loop/state/` failing to **parse**.
+`backlog.py` refuses an unreadable or malformed file — exit `3`, a sentence on stderr, nothing on
+stdout, and the file left exactly as found — and `run.sh` captures it only through
+`backlog_scalar`, which checks the exit code and refuses an empty answer. Before that, a corrupt
+file became `TYPE=""` and the night ended reporting `unknown turn type ''`, which is the right
+failure under the wrong name. Note what is deliberately *not* done: a corrupt `state.json` is
+never defaulted, because defaulting it would zero `cost_usd` and hand the loop an unlimited
+budget. Absent is not corrupt — a missing file still defaults, since the first turn of a night
+has none. See ADR-019.
 
 ## Ultracode
 

@@ -30,6 +30,17 @@ shape of both problems instead of quoting either -- no identifier and no serial 
 `24e7469` is still on `origin` and still carries the original paragraph, so item 1 stays open here
 until `i0006` is executed by a human.
 
+**Detection, turn 12.** Until now nothing would have caught this class a second time. The
+opaque-token detector added for `i0005` needed a token of 16 characters and these are 11, so it
+matched none of the five tokens commit `af4e78b` removed — measured, not argued. It now uses a
+second, compact window (8–15 characters, no separator, two shape rejections) and catches all
+three raw identifiers; the two placeholder serials were already covered by the shape detector. See
+ADR-016 for why the single-window floor could not simply be lowered. This incident is now a
+regression fixture rather than a docstring citation:
+`tests.test_data_safety.OpaqueDetectorCatchesTheIncidentItWasWrittenFor` reads both sides of
+`af4e78b` out of history at test time and fails if any token that commit removed stops being
+detected. It writes no token into any tracked file and prints masked shapes only.
+
 ### 2. Loop bookkeeping — placeholder serials
 
 **Where.** Commit `5082319` on `main`, which introduced them; removed again in `8257642`. Both
@@ -83,5 +94,18 @@ record, in this file.
   attached separator, not only a trailing `_<digits>`, which is what the shorthand on line 3 of
   `loop/JOURNAL.md` exploited. Both were confirmed against a seeded leak, and both report a
   masked shape rather than the value.
+- **One of those two closures is narrower than it reads, and this is the honest statement of it.**
+  The opaque-token extractor requires a token of 16 characters, and the three identifiers whose
+  removal it was written for are 11 — so it matches none of them and would not have caught the
+  night-one incident. Backlog `i0018` lowers the floor; until it lands, the shape-free check
+  covers longer ids only and `_common.md`'s manual `grep -c` rule is still doing the work for
+  short ones.
+- **Neither detector could be trusted to have run, and that is fixed (ADR-015, backlog `i0022`).**
+  Every content check skipped when it could not enumerate files, and a suite in which everything
+  skips exits 0, so `DATA_SAFETY_SCAN_REF` pointed at an unresolvable ref printed `OK (skipped=6)`
+  and the push gate pushed that branch having scanned nothing. A missing `export/` made the
+  raw-identifier check inert the same way. Both are now red under the gate, and the gate checks a
+  receipt naming how many files were enumerated and how many tests ran rather than reading the
+  exit code alone.
 - Neither closes the *history* half of this file. The commits listed above still carry what they
   carry; a detector added today does not reach them.

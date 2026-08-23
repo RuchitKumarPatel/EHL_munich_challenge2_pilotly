@@ -201,6 +201,43 @@ sync_integration_branch() {
 # shellcheck source=/dev/null
 source "$ROOT/loop/push_gate.sh"
 
+# --- reading the queue ---------------------------------------------------------------------
+#
+# loop/state/backlog.json and state.json are written by every turn agent, so backlog.py treats
+# them as untrusted and exits 3 with an explanation on stderr rather than dying with a
+# traceback. This is the other half of that contract: a command substitution under `set -uo
+# pipefail` (no -e) DISCARDS the exit code, so `TYPE=$("${BACKLOG[@]}" plan ...)` used to turn a
+# corrupt state file into TYPE="" and the loop stopped logging "unknown turn type ''" -- the
+# wrong cause for the right failure, with the real one buried in the log. Every capture goes
+# through here; tests/test_backlog_state.py greps run.sh for the raw form.
+# Stderr goes to its own file rather than being folded into the value: a diagnostic line on a
+# SUCCESSFUL call would otherwise be spliced into the scalar the supervisor then compares.
+backlog_scalar() {   # prints the value on success; returns 1 having printed NOTHING on failure
+  local out rc errfile why
+  errfile=$(mktemp) || { log "BACKLOG READ FAILED: no temp file" >&2; return 1; }
+  out=$("${BACKLOG[@]}" "$@" 2>"$errfile"); rc=$?
+  why=$(tr '\n' ' ' < "$errfile"); rm -f "$errfile"
+  if [ "$rc" -ne 0 ]; then
+    log "BACKLOG READ FAILED (rc=$rc): backlog.py $* -- ${why:-no message}" >&2
+    return 1
+  fi
+  if [ -z "$out" ]; then
+    # An empty answer is the shape the case statement mis-reported as "unknown turn type".
+    log "BACKLOG READ EMPTY: backlog.py $* printed nothing" >&2
+    return 1
+  fi
+  printf '%s\n' "$out"
+}
+
+backlog_run() {   # for the writes, whose output we do not need but whose failure we do
+  local rc errfile why
+  errfile=$(mktemp) || { log "WARN: backlog.py $* not run -- no temp file"; return 1; }
+  "${BACKLOG[@]}" "$@" >/dev/null 2>"$errfile"; rc=$?
+  why=$(tr '\n' ' ' < "$errfile"); rm -f "$errfile"
+  [ "$rc" -eq 0 ] || log "WARN: backlog.py $* failed (rc=$rc): ${why:-no message}"
+  return "$rc"
+}
+
 stop_reason() {
   if [ -f "$STOPFILE" ]; then echo "kill switch $STOPFILE"; return 0; fi
   if [ "$(date +%s)" -ge "$DEADLINE_EPOCH" ]; then echo "wall clock ($LOOP_HOURS h)"; return 0; fi
@@ -238,7 +275,11 @@ while true; do
     break
   fi
 
-  TURN=$("${BACKLOG[@]}" turn --bump)
+  if ! TURN=$(backlog_scalar turn --bump); then
+    log "stopping: the turn counter is unreadable -- see the BACKLOG READ line above"
+    journal "?" "stop" "stopped: loop/state is unreadable, see loop/logs/supervisor.log"
+    break
+  fi
   commit_stragglers "$TURN"
 
   DIVERGED=0
@@ -247,13 +288,17 @@ while true; do
     git checkout -q "$INTEGRATION_BRANCH" 2>/dev/null || log "WARN: could not check out $INTEGRATION_BRANCH"
   fi
 
-  TYPE=$("${BACKLOG[@]}" plan --deck-every "$DECK_EVERY" --review-every "$REVIEW_EVERY")
+  if ! TYPE=$(backlog_scalar plan --deck-every "$DECK_EVERY" --review-every "$REVIEW_EVERY"); then
+    log "stopping: the turn planner could not read the queue"
+    journal "$TURN" "stop" "stopped: the queue is unreadable, see loop/logs/supervisor.log"
+    break
+  fi
   # A diverged main makes merging unsafe; keep generating and evaluating instead.
   if [ "$DIVERGED" = "1" ] && [ "$TYPE" = "merge" ]; then
     log "turn $TURN: merge suppressed (main diverged) -> evaluate"
     TYPE="evaluate"
   fi
-  "${BACKLOG[@]}" turn --type "$TYPE" >/dev/null
+  backlog_run turn --type "$TYPE" >/dev/null
 
   case "$TYPE" in
     council)   TIMEOUT=$TIMEOUT_COUNCIL;   EFFORT=$EFFORT_COUNCIL;   ULTRA=$ULTRACODE_COUNCIL   ;;
@@ -276,11 +321,19 @@ while true; do
 
   # The prompt is the turn type's file plus a small live-state header, so a fresh
   # process knows the turn number and the queue without being told in context.
+  # The queue is read BEFORE the prompt is assembled: a failed read inside the
+  # block would hand the turn an empty backlog, and a turn that believes the
+  # queue is empty re-proposes everything already in it.
+  if ! QUEUE_JSON=$(backlog_scalar list --json); then
+    log "stopping: could not read the queue for the turn prompt"
+    journal "$TURN" "stop" "stopped: the queue is unreadable, see loop/logs/supervisor.log"
+    break
+  fi
   {
     printf '# LOOP TURN %s - type: %s\n\n' "$TURN" "$TYPE"
     printf 'Team name: %s\nTeam members: %s\n\n' "${TEAM_NAME:-[FILL]}" "${TEAM_MEMBERS:-[FILL]}"
     printf 'Current backlog state:\n\n```json\n'
-    "${BACKLOG[@]}" list --json
+    printf '%s\n' "$QUEUE_JSON"
     printf '```\n\n'
     cat "$ROOT/loop/prompts/_common.md"
     printf '\n'
@@ -314,7 +367,7 @@ try:
 except Exception:
     print(0.0)
 ' "$STEM.json" 2>/dev/null || echo 0.0)
-    "${BACKLOG[@]}" cost --add "$COST" >/dev/null
+    backlog_run cost --add "$COST" >/dev/null
 
     if [ "$RC" -ne 0 ] && [ "$ATTEMPT" -lt 3 ] && is_rate_limited "$STEM.json" "$STEM.err"; then
       ATTEMPT=$(( ATTEMPT + 1 ))
@@ -336,7 +389,7 @@ except Exception:
   fi
 
   # Safety net: whatever the turn did or failed to do, the bookkeeping lands.
-  "${BACKLOG[@]}" render >/dev/null
+  backlog_run render >/dev/null
   commit_stragglers "$TURN"
 
   push_all_branches
@@ -345,7 +398,7 @@ except Exception:
   # nothing moves -- a council that keeps proposing closed ideas, an evaluate turn that never
   # commits to a status, an implement turn that times out on the same idea. Rather than guard
   # each one, watch the two things that must change when work happens: the queue and the commits.
-  FINGERPRINT="$("${BACKLOG[@]}" stats)|$(git rev-parse --all | md5sum)"
+  FINGERPRINT="$(backlog_scalar stats || echo unreadable)|$(git rev-parse --all | md5sum)"
   if [ "$FINGERPRINT" = "${LAST_FINGERPRINT:-}" ]; then
     STALL=$(( ${STALL:-0} + 1 ))
     log "no progress this turn (stall $STALL/3)"
