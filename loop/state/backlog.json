@@ -468,7 +468,7 @@
     "kind": "code",
     "why": "tests/test_push_gate.py:257 on idea/integrate-turn7. 'if __name__ == \"__main__\": unittest.main()' sits above class OpaqueTokenScanIsRefAware, so running the file directly exits before that class is defined and reports OK having never run the tests that pin the bug commit 4da8330 fixed. make test uses discovery and does collect them (14 tests), so this is not currently a live gap -- it is a silent-non-collection trap and it is inconsistent with every other new test file in the branch, all of which put the guard last. Found by the code-review skill and the python-reviewer independently.",
     "status": "implemented",
-    "branch": null,
+    "branch": "idea/scan-fails-closed",
     "created_turn": 8,
     "notes": [
       {
@@ -502,7 +502,7 @@
     "kind": "presentation",
     "why": "loop/README.md:86 on idea/integrate-turn7 says raw ids 'are covered by backlog i0005; until that lands, the review turn greps for them by hand', while that same branch implements i0005, flags it implemented, and has docs/DATA-SAFETY-DEBT.md declare it closed. The doc and the code disagree about which control exists. This is exactly the i0013 class -- a safety sentence that is wrong in the reassuring direction is what lets the next review turn stop looking. Found by the code-review skill.",
     "status": "implemented",
-    "branch": null,
+    "branch": "idea/scan-fails-closed",
     "created_turn": 8,
     "notes": [
       {
@@ -512,6 +512,21 @@
       {
         "turn": 11,
         "text": "Landed in the SAME commit as i0022 (c3cf051), which is what its own note required. loop/README.md's safety section was restated, not deleted: it now enumerates what each detector catches, says the raw-identifier check EXISTS (i0005, landed) rather than 'is covered by backlog i0005; until that lands the review turn greps by hand', and drops the grep-by-hand instruction as the control. It also states the live limit in the reassuring-direction-safe way: the extractor needs 16 characters and the three ids it was written for are 11, so _common.md's manual grep -c rule is still doing the work for short ids until i0018 lands. New paragraph on fail-closed scanning. docs/DATA-SAFETY-DEBT.md gained the matching two bullets -- one naming the 16-char narrowness of the i0005 closure, one recording the i0022 fail-open as fixed under ADR-015. All three sources (both docs and the suite docstring) now agree on which classes are detected. WHILE WRITING IT the presigned-signature check went red on my own draft, which had quoted the parameter literally; the README now names it instead and says so."
+      }
+    ]
+  },
+  {
+    "id": "i0027",
+    "title": "Integrate the four parallel turn-11/12 branches into one merge candidate",
+    "kind": "infra",
+    "why": "Four branches (idea/scan-fails-closed, idea/opaque-token-floor, idea/ref-name-injection, idea/verify-missing-artifact) each carried an implemented idea and each appended to docs/DECISIONS.md, docs/IDEAS.md and loop/JOURNAL.md. Three of them modified tests/test_data_safety.py independently and two rewrote loop/push_gate.sh's push_all_branches independently. The merge turn would have faced four conflicted merges on defense night. Success = one branch that contains all four with make test, make all, router.gates and router.verify green.",
+    "status": "implemented",
+    "branch": "idea/integrate-turn12",
+    "created_turn": 12,
+    "notes": [
+      {
+        "turn": 12,
+        "text": "All four branches merged onto idea/integrate-turn12, in ADR order: idea/scan-fails-closed (i0022+i0024+i0026, ADR-015), idea/opaque-token-floor (i0018, ADR-016), idea/ref-name-injection (i0023, ADR-017), idea/verify-missing-artifact (i0019, ADR-018). Each verified green in isolation first: make test 152 / 151 / 150 / 147 OK against main's 140. ADR numbering needed no renumbering -- the parallel sessions had already coordinated 015..018. Result on the integration branch, all four checks: make test 180 OK, make all green (301 claims), router.gates GREEN 4 pass / 2 warn / 0 fail, router.verify PASS on 44 numerals across 5 artifacts. The per-ref scan the branch itself hardens is green on the branch (files=126 ran=25 skipped=0 failed=0) and RED on an unresolvable ref (files=0 failed=3, exit 1), which is i0022's whole point measured on the merged tree.\n\nTWO REAL DEFECTS THE INTEGRATION FOUND, neither visible to any branch alone; both fixed test-first, watched red then green.\n\n(1) 7db12be. i0018 added OpaqueDetectorCatchesTheIncidentItWasWrittenFor with a bare os.path.isdir(EXPORT) skip guard. i0022 had meanwhile made 'the export directory exists but is EMPTY' a first-class case and routed every other export-backed check through _require_export, which knows that state is a skip outside the gate and RED under STRICT. isdir says yes to an empty directory, the export scan then answers 'the corpus knows none of these tokens', and the control reads that as its fixture commit having stopped reproducing the incident -- so it FAILED where it must skip. Caught by i0022's own test_a_missing_export_still_only_skips_outside_the_gate, which went red on the merged tree. Routed through _require_export.\n\n(2) c78eb40. i0022 made a green exit code insufficient: a scan counts as clean only when it prints a receipt naming how many files it enumerated and how many tests ran. i0023's end-to-end tests drive push_all_branches against a throwaway repo with stub scanners standing in for that suite, and those stubs only exit 0. Merged, the gate stopped at the working-tree scan and pushed nothing, so three of i0023's assertions about hostile ref names were passing or failing for a reason unrelated to ref names. Both stubs now speak the receipt protocol via a shared RECEIPT_LINE constant that says why.\n\nRESOLUTION NOTES FOR THE MERGE TURN. push_gate.sh keeps BOTH mechanisms -- ds_receipt_ok and ds_ref_name_ok -- plus the sha/name split in ds_scan_ref (the scan pins the object, the log file is still findable by the name a human knows) and the log line that names the UNRUNNABLE case as well as the red one. tests/test_data_safety.py keeps both the STRICT machinery and the import-time refusal of an option-shaped SCAN_REF. REF_AWARE gained CompactOpaqueTokenShapes (cheap pattern test, same precedent as ConcretePlaceholderShapes) and deliberately did NOT gain OpaqueDetectorCatchesTheIncidentItWasWrittenFor, whose fixture is a commit in history -- identical for every ref, and it walks the 101 MB export once; running it per branch repeats that walk ~11x a turn for an answer that cannot change. MERGE THIS BRANCH, NOT THE FOUR. main's backlog is stale: i0018, i0019, i0022, i0023, i0024 and i0026 all still read accepted with branch null there. When loop/state/backlog.json conflicts, UNION it -- do not take either side wholesale, which is the mistake turn 9 avoided by hand."
       }
     ]
   }
