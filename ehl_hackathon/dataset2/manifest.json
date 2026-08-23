@@ -1,0 +1,78 @@
+{
+  "source": "dataset2/scripts/generate_dataset2.py",
+  "seed": 20260823,
+  "trajectories": 756,
+  "requests": 4562,
+  "models": [
+    "claude-fable-5",
+    "claude-opus-4-8",
+    "claude-opus-5",
+    "claude-sonnet-5",
+    "gpt-5.6-luna",
+    "gpt-5.6-sol",
+    "gpt-5.6-terra",
+    "gpt-5.7-nova"
+  ],
+  "coverage": {
+    "task_type": {
+      "code_generation": 163,
+      "creative_writing": 116,
+      "data_analysis": 71,
+      "multi_step_planning": 143,
+      "qa_reasoning": 131,
+      "summarization_extraction": 132
+    },
+    "difficulty": {
+      "easy": 273,
+      "hard": 174,
+      "medium": 309
+    },
+    "domain": {
+      "data_ops": 138,
+      "engineering": 135,
+      "finance": 156,
+      "legal": 38,
+      "sales": 154,
+      "support": 135
+    },
+    "era": {
+      "cost_push_2026h1": 199,
+      "explore_2025h2": 320,
+      "heuristic_2025h1": 237
+    },
+    "logged_model": {
+      "claude-fable-5": 84,
+      "claude-opus-4-8": 103,
+      "claude-opus-5": 117,
+      "claude-sonnet-5": 106,
+      "gpt-5.6-luna": 105,
+      "gpt-5.6-sol": 93,
+      "gpt-5.6-terra": 129,
+      "gpt-5.7-nova": 19
+    },
+    "edge_case": {
+      "None": 720,
+      "all_failure": 6,
+      "long_horizon": 6,
+      "no_tools": 6,
+      "oversized_prompt": 6,
+      "single_call": 6,
+      "unicode_heavy": 6
+    },
+    "graded": 393,
+    "has_failure": 109,
+    "branching": 112,
+    "multi_turn": 136,
+    "model_switch": 60,
+    "context_compaction": 53,
+    "tool_schema_change": 50,
+    "tool_reorder": 46,
+    "replicated": 120,
+    "in_positivity_violation_cell": 44,
+    "calls_min_median_max": [
+      1,
+      5,
+      40
+    ]
+  }
+}

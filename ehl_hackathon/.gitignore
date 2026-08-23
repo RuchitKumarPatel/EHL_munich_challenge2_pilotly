@@ -1,0 +1,24 @@
+# Python bytecode and test caches — never useful in version control and they
+# churn on every run.
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtualenvs / build artifacts
+.venv/
+venv/
+*.egg-info/
+build/
+dist/
+
+# Editor / OS noise
+.DS_Store
+Thumbs.db
+*.swp
+
+# Session scratch markers written by the pipeline scripts
+.final_ts
+.last_ts

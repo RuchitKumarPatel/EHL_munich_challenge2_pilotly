@@ -1,0 +1,41 @@
+{
+  "source": "dataset1/scripts/generate_dataset1.py",
+  "seed": 13,
+  "tasks": 150,
+  "requests": 1203,
+  "models": [
+    "claude-fable-5",
+    "claude-opus-4-8",
+    "claude-opus-5",
+    "claude-sonnet-5",
+    "gpt-5.6-luna",
+    "gpt-5.6-sol",
+    "gpt-5.6-terra"
+  ],
+  "coverage": {
+    "task_type": {
+      "qa_reasoning": 30,
+      "code_generation": 30,
+      "summarization_extraction": 30,
+      "multi_step_planning": 30,
+      "creative_writing": 30
+    },
+    "difficulty": {
+      "easy": 50,
+      "medium": 50,
+      "hard": 50
+    },
+    "domain": {
+      "engineering": 30,
+      "finance": 30,
+      "support": 30,
+      "sales": 30,
+      "data_ops": 30
+    },
+    "has_failure": 51,
+    "cache_break": 23,
+    "multi_turn": 41,
+    "branching": 34,
+    "graded_ground_truth": 31
+  }
+}
