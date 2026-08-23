@@ -43,6 +43,14 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RESULTS = os.path.join(REPO_ROOT, "results")
 EXPORT = os.path.join(REPO_ROOT, "export")
 
+#: When set to a git ref, the two repo-file checks read that ref's tree instead
+#: of the working tree. The loop's push gate uses this to scan each branch it is
+#: about to push: it used to scan whatever happened to be checked out and then
+#: push every branch, so a branch an earlier turn moved off went out unscanned.
+#: The generated-artifact and export-shingle checks are unaffected -- those are
+#: working-tree concerns and neither directory is tracked.
+SCAN_REF = os.environ.get("DATA_SAFETY_SCAN_REF", "").strip()
+
 PII_RE = re.compile(r"PII_[A-Z][A-Z0-9_]*")
 ENTITY_RE = re.compile(r"<ENTITY_[^>]*>")
 #: Presigned-URL signature parameter. The sibling parameters are listed so a
@@ -78,6 +86,38 @@ def _text(path):
 def _rel(path):
     """Repo-relative path, for readable failure messages."""
     return os.path.relpath(path, REPO_ROOT)
+
+
+def _repo_blob(rel, max_bytes):
+    """Text of one repo file, from the working tree or from SCAN_REF's tree.
+
+    Returns None for anything that is not a readable regular file, or that is
+    larger than max_bytes -- a size guard, not a carve-out: the only files that
+    hit it are the inlined figure payloads, which are base64 of our own PNGs.
+    """
+    if SCAN_REF:
+        spec = "%s:%s" % (SCAN_REF, rel)
+        size = subprocess.run(["git", "cat-file", "-s", spec], cwd=REPO_ROOT,
+                              capture_output=True)
+        if size.returncode != 0:
+            return None            # a submodule, a symlink target, or a gone path
+        try:
+            if int(size.stdout.strip()) > max_bytes:
+                return None
+        except ValueError:
+            return None
+        blob = subprocess.run(["git", "cat-file", "blob", spec], cwd=REPO_ROOT,
+                              capture_output=True)
+        if blob.returncode != 0:
+            return None
+        return blob.stdout.decode("latin-1")
+    path = os.path.join(REPO_ROOT, rel)
+    if not os.path.isfile(path) or os.path.getsize(path) > max_bytes:
+        return None
+    try:
+        return _text(path)
+    except OSError:
+        return None
 
 
 class ResultsCarryNoPlaceholders(unittest.TestCase):
@@ -199,10 +239,19 @@ class RepoCarriesNoPresignedSignature(unittest.TestCase):
 
     @staticmethod
     def _repo_files():
-        """Tracked files plus untracked-and-not-ignored ones (read-only git calls)."""
+        """Tracked files plus untracked-and-not-ignored ones (read-only git calls).
+
+        Under SCAN_REF this is the ref's tree instead. There is no untracked half
+        there and that is correct: an unpushed working-tree file cannot reach the
+        remote through a ref, and the working-tree scan still covers it.
+        """
         paths = []
-        for args in (["git", "ls-files", "-z"],
-                     ["git", "ls-files", "--others", "--exclude-standard", "-z"]):
+        if SCAN_REF:
+            listings = [["git", "ls-tree", "-r", "--name-only", "-z", SCAN_REF]]
+        else:
+            listings = [["git", "ls-files", "-z"],
+                        ["git", "ls-files", "--others", "--exclude-standard", "-z"]]
+        for args in listings:
             try:
                 raw = subprocess.run(args, cwd=REPO_ROOT, capture_output=True,
                                      check=True).stdout
@@ -221,16 +270,14 @@ class RepoCarriesNoPresignedSignature(unittest.TestCase):
             raise unittest.SkipTest("git is unavailable; cannot enumerate repo files")
         offenders = []
         for rel in self.paths:
-            path = os.path.join(REPO_ROOT, rel)
-            if not os.path.isfile(path) or os.path.getsize(path) > 64 * 1024 * 1024:
-                continue
-            try:
-                blob = _text(path)
-            except OSError:
+            blob = _repo_blob(rel, 64 * 1024 * 1024)
+            if blob is None:
                 continue
             if AMZ_SIG_RE.search(blob):
                 # This file names the pattern in its own source; that is not a hit.
-                if os.path.abspath(path) == os.path.abspath(__file__):
+                # Compared by repo-relative path so it holds under SCAN_REF too,
+                # where the scanned file has no path on disk at all.
+                if rel == _rel(os.path.abspath(__file__)):
                     continue
                 offenders.append(rel)
         self.assertEqual(offenders, [],
@@ -288,12 +335,8 @@ class RepoSourceCarriesNoExportContent(unittest.TestCase):
             raise unittest.SkipTest("git is unavailable; cannot enumerate repo files")
         offenders = {}
         for rel in self.paths:
-            path = os.path.join(REPO_ROOT, rel)
-            if not os.path.isfile(path) or os.path.getsize(path) > 16 * 1024 * 1024:
-                continue
-            try:
-                blob = _text(path)
-            except OSError:
+            blob = _repo_blob(rel, 16 * 1024 * 1024)
+            if blob is None:
                 continue
             hits = set(self.CONCRETE_PII.findall(blob))
             hits |= set(self.CONCRETE_ENTITY.findall(blob))
